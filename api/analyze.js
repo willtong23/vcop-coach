@@ -74,12 +74,20 @@ export default async function handler(req, res) {
       ],
     });
 
-    const content = message.content[0].text;
+    let content = message.content[0].text.trim();
+    // Strip markdown code fences if present
+    if (content.startsWith("```")) {
+      content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    }
     const feedback = JSON.parse(content);
 
     return res.status(200).json(feedback);
   } catch (err) {
-    console.error("Claude API error:", err);
-    return res.status(500).json({ error: "Something went wrong analysing your writing. Please try again." });
+    console.error("Claude API error:", err?.status, err?.message);
+
+    if (err?.status === 401) {
+      return res.status(500).json({ error: "API key is missing or invalid. Please check ANTHROPIC_API_KEY." });
+    }
+    return res.status(500).json({ error: err?.message || "Something went wrong analysing your writing. Please try again." });
   }
 }
