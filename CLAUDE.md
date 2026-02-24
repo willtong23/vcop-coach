@@ -14,6 +14,17 @@
 - Claude API (Haiku 4.5) via Vercel Serverless Function (`api/analyze.js`)
 - API key 透過環境變數 `ANTHROPIC_API_KEY` 管理，絕不 commit
 
+## 架構
+```
+前端 (Vite + React)
+  → POST /api/analyze { text: "學生作文..." }
+  → Vercel Serverless Function (api/analyze.js)
+  → Claude Haiku 4.5 API
+  → 回傳 JSON（四個 VCOP 維度）
+```
+- API key 不放前端，透過 serverless function 代理
+- `mockFeedback.js` 保留作為參考資料結構
+
 ## VCOP 維度配色
 - Vocabulary → 紫色 #8B5CF6 📚
 - Connectives → 藍色 #3B82F6 🔗
@@ -21,12 +32,19 @@
 - Punctuation → 橘色 #F59E0B 🎯
 
 ## 開發指令
-- `npm run dev` — 啟動開發伺服器
+- `npm run dev` — 啟動前端開發伺服器
 - `npm run build` — 打包
 - `vercel dev` — 本地開發（含 serverless function）
 - `vercel --prod` — 部署到 Vercel
 
 ## 部署
 - 平台：Vercel
+- 公開網址：https://vcop-coach.vercel.app
+- GitHub：https://github.com/willtong23/vcop-coach
 - 環境變數：在 Vercel dashboard 設定 `ANTHROPIC_API_KEY`
 - Serverless function：`api/analyze.js` → POST `/api/analyze`
+- 改完程式後：`vercel --prod --yes` 重新部署
+
+## 踩過的坑
+- **Vercel 環境變數要重新部署才生效**：在 dashboard 加完 env var 後必須再跑一次 `vercel --prod`，舊的 deployment 不會自動拿到新變數
+- **Claude 回傳 JSON 會包 markdown code fence**：即使 prompt 要求「只回 JSON」，Claude 仍可能回 ` ```json ... ``` `。`api/analyze.js` 裡用 regex strip 掉 code fence 再 `JSON.parse`
