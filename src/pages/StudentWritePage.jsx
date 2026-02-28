@@ -411,6 +411,18 @@ export default function StudentWritePage() {
               </>
             )}
 
+            {loading && (
+              <div className="analyzing-overlay">
+                <div className="analyzing-pencil">✏️</div>
+                <div className="analyzing-text">Reading your writing...</div>
+                <div className="analyzing-dots">
+                  <span className="analyzing-dot" />
+                  <span className="analyzing-dot" />
+                  <span className="analyzing-dot" />
+                </div>
+              </div>
+            )}
+
             {error && (
               <div className="error-message"><p>{error}</p></div>
             )}
