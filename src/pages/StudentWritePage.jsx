@@ -496,7 +496,6 @@ export default function StudentWritePage() {
                     <VcopFilterBar
                       hiddenDimensions={hiddenDimensions}
                       onToggle={toggleDimension}
-                      compact
                     />
                     <button
                       className="legend-toggle-btn"
