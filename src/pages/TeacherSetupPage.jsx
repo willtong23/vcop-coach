@@ -179,6 +179,9 @@ export default function TeacherSetupPage() {
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               disabled={loading}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
             />
           </div>
 
@@ -226,6 +229,9 @@ export default function TeacherSetupPage() {
               onChange={(e) => setExtraInstructions(e.target.value)}
               disabled={loading}
               rows={3}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
             />
           </div>
 

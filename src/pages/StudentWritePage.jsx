@@ -47,11 +47,15 @@ export default function StudentWritePage() {
   const [feedbackAlreadyDone, setFeedbackAlreadyDone] = useState(false);
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
-  // Feedback depth slider (1-5, default 2)
-  const [feedbackDepth, setFeedbackDepth] = useState(2);
+  // Feedback level slider (1-3, default 1)
+  const [feedbackLevel, setFeedbackLevel] = useState(1);
 
-  // 6 toggles, ALL default OFF — student sees clean text first
-  const [hiddenDimensions, setHiddenDimensions] = useState(new Set(["V", "C", "O", "P", "spelling", "grammar"]));
+  // 10 toggles, ALL default OFF — student sees clean text first
+  const [hiddenDimensions, setHiddenDimensions] = useState(new Set([
+    "V_praise", "V_suggestion", "C_praise", "C_suggestion",
+    "O_praise", "O_suggestion", "P_praise", "P_suggestion",
+    "spelling", "grammar",
+  ]));
   const [showLegend, setShowLegend] = useState(false);
 
   // Side-by-side scroll sync
@@ -262,7 +266,7 @@ export default function StudentWritePage() {
         body: JSON.stringify({
           text, sessionId: session.id, studentId: user.studentId,
           vcopFocus: session.vcopFocus, topic: session.topic,
-          extraInstructions: session.extraInstructions, feedbackDepth,
+          extraInstructions: session.extraInstructions, feedbackLevel,
         }),
       });
       if (!res.ok) {
@@ -299,7 +303,7 @@ export default function StudentWritePage() {
         body: JSON.stringify({
           text: editText, sessionId: session.id, studentId: user.studentId,
           vcopFocus: session.vcopFocus, topic: session.topic,
-          extraInstructions: session.extraInstructions, feedbackDepth,
+          extraInstructions: session.extraInstructions, feedbackLevel,
           submissionId, iterationNumber: newVersion,
           previousText: prevIteration.text, previousAnnotations: prevIteration.annotations,
         }),
@@ -378,22 +382,25 @@ export default function StudentWritePage() {
                     onChange={(e) => setText(e.target.value)}
                     disabled={loading}
                     rows={8}
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="off"
                   />
                   <SpeechInput onTranscript={handleSpeechTranscript} disabled={loading} />
                 </div>
                 <div className="feedback-depth-slider">
-                  <div className="feedback-depth-label">How much feedback?</div>
+                  <div className="feedback-depth-label">Feedback level</div>
                   <div className="feedback-depth-track">
-                    <span className="feedback-depth-end">Less</span>
+                    <span className="feedback-depth-end">1</span>
                     <input
                       type="range"
                       min="1"
-                      max="5"
-                      value={feedbackDepth}
-                      onChange={(e) => setFeedbackDepth(Number(e.target.value))}
+                      max="3"
+                      value={feedbackLevel}
+                      onChange={(e) => setFeedbackLevel(Number(e.target.value))}
                       className="feedback-depth-input"
                     />
-                    <span className="feedback-depth-end">More</span>
+                    <span className="feedback-depth-end">3</span>
                   </div>
                 </div>
                 <button className="analyze-button" onClick={handleSubmit} disabled={loading || !text.trim()}>
@@ -610,7 +617,7 @@ export default function StudentWritePage() {
                     </button>
                   ))}
                 </div>
-                <textarea className="writing-input" placeholder="Anything else you want to say? (optional)" value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} rows={2} />
+                <textarea className="writing-input" placeholder="Anything else you want to say? (optional)" value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} rows={2} spellCheck={false} autoCorrect="off" autoCapitalize="off" />
                 <button className="analyze-button" onClick={handleSubmitFeedback} disabled={!feedbackMood} style={{ marginTop: 12, marginBottom: 0 }}>
                   Submit Feedback
                 </button>

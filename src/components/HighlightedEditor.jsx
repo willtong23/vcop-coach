@@ -50,6 +50,9 @@ export default function HighlightedEditor({ value, onChange, annotations, hidden
         onChange={(e) => onChange(e.target.value)}
         onScroll={handleScroll}
         placeholder="Edit your writing here..."
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
       />
     </div>
   );
@@ -68,10 +71,10 @@ function buildHighlights(text, annotations, hiddenDimensions) {
     if (a.type === "spelling") return !hidden.has("spelling");
     if (a.type === "grammar") return !hidden.has("grammar");
     if (a.type === "suggestion") {
-      if (a.dimension && hidden.has(a.dimension)) return false;
+      if (a.dimension) return !hidden.has(`${a.dimension}_suggestion`);
       return true;
     }
-    return false; // praise, revision_good etc. don't need highlights
+    return false; // praise, american_spelling, revision_good etc. don't need highlights
   });
 
   // Locate each phrase with EXACT (case-sensitive) match.

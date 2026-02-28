@@ -947,12 +947,17 @@ body {
 .vcop-inline-filter-compact {
   gap: 4px;
   margin-bottom: 0;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+}
+
+.vcop-toggle-pair {
+  display: inline-flex;
+  gap: 2px;
 }
 
 .vcop-btn-compact {
   padding: 3px 8px;
-  font-size: 16px;
+  font-size: 11px;
   border-width: 1.5px;
   border-radius: 14px;
 }
@@ -1087,6 +1092,26 @@ body {
   background: #fffbeb;
 }
 
+/* American spelling (purple, informational) */
+.ann-american-block {
+  display: inline;
+}
+
+.ann-american-text {
+  color: #7C3AED;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: #7C3AED;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+  text-decoration-style: dotted;
+}
+
+.ann-suggestion-note-american {
+  border-left-color: #c4b5fd;
+  background: #f5f3ff;
+}
+
 .ann-suggestion-icon {
   margin-right: 4px;
 }
@@ -1144,6 +1169,14 @@ body {
 .legend-sample-suggestion {
   font-weight: 600;
   color: #2563EB;
+  min-width: 130px;
+}
+
+.legend-sample-american {
+  font-weight: 600;
+  color: #7C3AED;
+  text-decoration: underline dotted #7C3AED;
+  text-underline-offset: 3px;
   min-width: 130px;
 }
 

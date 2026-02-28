@@ -531,6 +531,9 @@ export default function TeacherDashboardPage() {
                     value={broadcastText}
                     onChange={(e) => setBroadcastText(e.target.value)}
                     rows={2}
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="off"
                   />
 
                   <button
@@ -795,6 +798,9 @@ export default function TeacherDashboardPage() {
                                   }))
                                 }
                                 rows={2}
+                                spellCheck={false}
+                                autoCorrect="off"
+                                autoCapitalize="off"
                               />
                               <button
                                 className="save-comment-btn"

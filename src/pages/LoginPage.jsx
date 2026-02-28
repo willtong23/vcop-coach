@@ -74,6 +74,9 @@ export default function LoginPage() {
                 onChange={(e) => setStudentId(e.target.value)}
                 disabled={loading}
                 autoFocus
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
               />
             </div>
           )}
@@ -88,6 +91,9 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
               autoFocus={role === "teacher"}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
             />
           </div>
 

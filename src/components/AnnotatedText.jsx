@@ -23,7 +23,8 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
     return <p className="annotated-text">{text}</p>;
   }
 
-  // Filter annotations based on 6 toggles: V, C, O, P, spelling, grammar
+  // Filter annotations based on 10 toggles:
+  // V_praise, V_suggestion, C_praise, C_suggestion, O_praise, O_suggestion, P_praise, P_suggestion, spelling, grammar
   const hidden = hiddenDimensions || new Set();
   const visibleAnnotations = annotations.filter((a) => {
     // revision_good always shown
@@ -32,15 +33,19 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
     if (a.type === "spelling") return !hidden.has("spelling");
     // grammar errors — controlled by grammar toggle
     if (a.type === "grammar") return !hidden.has("grammar");
+    // american spelling — controlled by spelling toggle
+    if (a.type === "american_spelling") return !hidden.has("spelling");
     // revision_retry follows original type
     if (a.type === "revision_retry") {
       if (a.originalType === "spelling") return !hidden.has("spelling");
       if (a.originalType === "grammar") return !hidden.has("grammar");
-      if (a.dimension && hidden.has(a.dimension)) return false;
+      if (a.dimension) return !hidden.has(`${a.dimension}_suggestion`);
       return true;
     }
-    // suggestion/praise — controlled by VCOP dimension toggles
-    if (a.dimension && hidden.has(a.dimension)) return false;
+    // praise — controlled by dimension_praise toggle
+    if (a.type === "praise" && a.dimension) return !hidden.has(`${a.dimension}_praise`);
+    // suggestion — controlled by dimension_suggestion toggle
+    if (a.type === "suggestion" && a.dimension) return !hidden.has(`${a.dimension}_suggestion`);
     return true;
   });
 
@@ -148,6 +153,16 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
           </span>
         );
       }
+    } else if (ann.type === "american_spelling") {
+      segments.push(
+        <span key={key++} className="ann-american-block">
+          <span className="ann-american-text">{phraseText}</span>
+          <span className="ann-suggestion-note ann-suggestion-note-american">
+            <span className="ann-suggestion-icon">🟣</span>
+            <span className="ann-suggestion-content">'{phraseText}' is American spelling — in British English we write '{ann.suggestion}'</span>
+          </span>
+        </span>
+      );
     } else if (ann.type === "suggestion") {
       if (isFinalized && ann.fixed) {
         segments.push(
@@ -312,6 +327,10 @@ export function FeedbackLegend({ isRevision, isFinalized }) {
         <span className="legend-label">= Grammar error 🟠</span>
       </div>
       <div className="legend-row">
+        <span className="legend-sample-american">Purple dotted</span>
+        <span className="legend-label">= American spelling (not an error) 🟣</span>
+      </div>
+      <div className="legend-row">
         <span className="legend-sample-suggestion">Blue text</span>
         <span className="legend-label">= VCOP suggestion (could be better) 💡</span>
       </div>
@@ -335,27 +354,50 @@ export function FeedbackLegend({ isRevision, isFinalized }) {
   );
 }
 
-const ALL_TOGGLES = [
-  { key: "V", emoji: "📚", label: "V", color: "#8B5CF6" },
-  { key: "C", emoji: "🔗", label: "C", color: "#3B82F6" },
-  { key: "O", emoji: "✨", label: "O", color: "#10B981" },
-  { key: "P", emoji: "🎯", label: "P", color: "#F59E0B" },
-  { key: "spelling", emoji: "🔤", label: "Spelling", color: "#DC2626" },
-  { key: "grammar", emoji: "📏", label: "Grammar", color: "#92400e" },
+const VCOP_TOGGLE_GROUPS = [
+  { dim: "V", label: "Vocabulary", color: "#8B5CF6" },
+  { dim: "C", label: "Connectives", color: "#3B82F6" },
+  { dim: "O", label: "Openers", color: "#10B981" },
+  { dim: "P", label: "Punctuation", color: "#F59E0B" },
+];
+
+const ERROR_TOGGLES = [
+  { key: "spelling", label: "Spelling", color: "#DC2626" },
+  { key: "grammar", label: "Grammar", color: "#92400e" },
 ];
 
 export function VcopFilterBar({ hiddenDimensions, onToggle, compact }) {
   return (
     <div className={`vcop-inline-filter ${compact ? "vcop-inline-filter-compact" : ""}`}>
-      {ALL_TOGGLES.map((t) => (
+      {VCOP_TOGGLE_GROUPS.map((g) => (
+        <span key={g.dim} className="vcop-toggle-pair">
+          <button
+            className={`vcop-inline-filter-btn ${!hiddenDimensions.has(`${g.dim}_praise`) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
+            style={{ "--btn-color": g.color }}
+            onClick={() => onToggle(`${g.dim}_praise`)}
+            title={!hiddenDimensions.has(`${g.dim}_praise`) ? `Hide ${g.label} praise` : `Show ${g.label} praise`}
+          >
+            {compact ? g.dim : g.label} ✅
+          </button>
+          <button
+            className={`vcop-inline-filter-btn ${!hiddenDimensions.has(`${g.dim}_suggestion`) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
+            style={{ "--btn-color": g.color }}
+            onClick={() => onToggle(`${g.dim}_suggestion`)}
+            title={!hiddenDimensions.has(`${g.dim}_suggestion`) ? `Hide ${g.label} suggestions` : `Show ${g.label} suggestions`}
+          >
+            {compact ? g.dim : g.label} 💡
+          </button>
+        </span>
+      ))}
+      {ERROR_TOGGLES.map((t) => (
         <button
           key={t.key}
           className={`vcop-inline-filter-btn ${!hiddenDimensions.has(t.key) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
           style={{ "--btn-color": t.color }}
           onClick={() => onToggle(t.key)}
-          title={!hiddenDimensions.has(t.key) ? `Hide ${t.emoji} ${t.label}` : `Show ${t.emoji} ${t.label}`}
+          title={!hiddenDimensions.has(t.key) ? `Hide ${t.label}` : `Show ${t.label}`}
         >
-          {t.emoji}{compact ? "" : t.label}
+          {t.label}
         </button>
       ))}
     </div>

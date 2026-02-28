@@ -12,6 +12,9 @@ export default function WritingInput({ value, onChange, disabled }) {
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         rows={8}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
       />
     </div>
   );

@@ -18,13 +18,13 @@ function getActualYear(studentId) {
   return YEAR_GROUP_MAP[prefix] || null;
 }
 
-function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackDepth) {
+function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel) {
   const dimensions = (vcopFocus && vcopFocus.length > 0 ? vcopFocus : ["V", "C", "O", "P"]);
 
   const dimensionDescriptions = {
     V: "Vocabulary — interesting/ambitious word choices",
     C: "Connectives — words that join ideas (because, however, furthermore, although...)",
-    O: "Openers — how sentences begin (time openers, -ing openers, adverb openers...)",
+    O: "Openers — how sentences begin. Six types: (1) Adverb opener (-ly words: Silently, Nervously, Suddenly), (2) -ing opener (Running through the forest, Gazing at the stars), (3) Question opener (Have you ever wondered...?), (4) Prepositional phrase opener (Under the bridge, At midnight, During the storm), (5) -ed opener (Exhausted from the journey, Convinced she was right), (6) Short punchy statement (It was over. She knew. Nothing moved.)",
     P: "Punctuation — correct and varied punctuation use",
   };
 
@@ -32,8 +32,10 @@ function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, it
     .map((d) => `- ${dimensionDescriptions[d]}`)
     .join("\n");
 
-  const depth = feedbackDepth || 2;
+  const level = feedbackLevel || 1;
   const dimCount = dimensions.length;
+  const actualYear = getActualYear(studentId);
+  const baseYear = actualYear ? actualYear.year : 5; // default Y5 if unknown
   const isRevision = iterationNumber > 1 && previousText;
 
   // For revision (v2), we DON'T find new problems — only check what was fixed
@@ -71,29 +73,28 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
 }`;
   }
 
-  // First version prompt — depth controls how much feedback, but ALL dimensions must be covered
-  let feedbackDepthRule = "";
-  if (depth <= 2) {
-    feedbackDepthRule = `7. FEEDBACK DEPTH (Light): Keep feedback focused. Flag genuine spelling/grammar errors (max 3). For each VCOP dimension, give one short suggestion OR one praise — keep it simple. Total annotations: ${Math.max(dimCount + 2, 5)}-${dimCount + 5}.`;
-  } else if (depth === 3) {
-    feedbackDepthRule = `7. FEEDBACK DEPTH (Standard): Give a balanced mix of praise, spelling fixes, and VCOP suggestions. For each VCOP dimension, give 1-2 annotations. Total annotations: ${Math.max(dimCount * 2, 6)}-10.`;
-  } else {
-    feedbackDepthRule = `7. FEEDBACK DEPTH (Detailed): Give thorough, in-depth feedback. For each VCOP dimension, give 2-3 annotations with specific examples and explanations. Include more suggestions than praise. Total annotations: ${Math.max(dimCount * 2 + 2, 8)}-14.`;
+  // Feedback level determines the STANDARD we judge by, not quantity.
+  // Level 1 = student's actual year group standard
+  // Level 2 = 1-2 years above actual year
+  // Level 3 = 3+ years above actual year
+  const targetYear = level === 1 ? baseYear : level === 2 ? baseYear + 2 : baseYear + 4;
+  const actualYearLabel = actualYear ? actualYear.label : `Y${baseYear}`;
+
+  // Build expectations based on the TARGET year (which depends on level)
+  function getYearExpectations(yr) {
+    if (yr <= 4) return "Y4 standard: Focus on basic sentence structure, correct full stops and capital letters, simple connectives (and, but, because, so). Praise even small wins. Keep suggestions simple.";
+    if (yr === 5) return "Y5 standard: Expect paragraph organisation, varied sentence openers (time, -ing, adverb), expanding vocabulary. More than Y4 but not Y6 complexity.";
+    if (yr === 6) return "Y6 standard: Expect tone control, complex sentence structures (relative clauses, subordinate clauses), precise and varied vocabulary, advanced punctuation (semicolons, colons, dashes).";
+    if (yr <= 8) return "Y7-8 standard (secondary level): Expect sophisticated vocabulary choices, deliberate rhetorical techniques (rhetorical questions, tricolon, metaphor), paragraph cohesion with discourse markers, varied sentence length for effect, controlled formality shifts, semicolons and colons used correctly for emphasis.";
+    return "Y9+ standard (advanced): Expect mastery of tone and register, subtle word connotations, complex multi-clause sentences with embedded clauses, advanced literary devices (juxtaposition, antithesis, anaphora), cohesive argument structure, confident use of all punctuation for stylistic effect.";
   }
 
-  // Year-level-specific expectations
-  const actualYear = getActualYear(studentId);
-  let yearExpectations = "";
-  if (actualYear) {
-    const yearRules = {
-      4: "This is a Y4 student. Focus on: basic sentence structure, correct full stops and capital letters, simple connectives (and, but, because, so). Praise even small wins.",
-      5: "This is a Y5 student. Focus on: paragraph organisation, varied sentence openers (time, -ing, adverb), expanding vocabulary. Expect more than Y4 but don't demand Y6 complexity.",
-      6: "This is a Y6 student. Focus on: tone control, complex sentence structures (relative clauses, subordinate clauses), precise and varied vocabulary, advanced punctuation (semicolons, colons, dashes).",
-    };
-    yearExpectations = yearRules[actualYear.year] || "";
-  }
+  const yearExpectations = `The student is actually ${actualYearLabel} (age ${baseYear + 3}-${baseYear + 4}).
+Feedback level: ${level}/3. You are evaluating at ${targetYear <= 6 ? `Y${targetYear}` : `Y${targetYear}`} standard.
+${getYearExpectations(targetYear)}
+${level >= 2 ? "Because this is above the student's actual year, push them with more ambitious suggestions — ask for more precise vocabulary, more complex sentence structures, and higher-level techniques. But remain encouraging." : "Match suggestions to what is realistic for this year group."}`;
 
-  const minAnnotations = depth <= 2 ? Math.max(dimCount + 2, 5) : depth === 3 ? Math.max(dimCount * 2, 6) : Math.max(dimCount * 2 + 2, 8);
+  const minAnnotations = Math.max(dimCount + 2, 5);
 
   let prompt = `You are a warm, encouraging English teacher for primary school students (ages 7-11). You analyse student writing using selected dimensions from the VCOP framework and return inline annotations.
 
@@ -103,7 +104,21 @@ ${focusList}
 ${yearExpectations ? `STUDENT LEVEL CONTEXT:\n${yearExpectations}\n` : ""}
 ${topic ? `WRITING TOPIC: ${topic}\nUse this topic context when evaluating the writing.\n` : ""}
 ${extraInstructions ? `ADDITIONAL TEACHER INSTRUCTIONS: ${extraInstructions}\n` : ""}
-ANNOTATION TYPES (show ALL feedback at once, not in batches):
+${dimensions.includes("O") ? `OPENERS DIMENSION — DETAILED ANALYSIS INSTRUCTIONS:
+You must analyse sentence openers using these 6 specific types:
+1. Adverb opener (-ly words): e.g. "Silently, the cat crept..." / "Nervously, she opened..."
+2. -ing opener (action words): e.g. "Running through the forest, he..." / "Gazing at the stars, she..."
+3. Question opener: e.g. "Have you ever wondered...?" / "What would you do if...?"
+4. Prepositional phrase opener (where/when): e.g. "Under the bridge, ..." / "At midnight, ..." / "During the storm, ..."
+5. -ed opener (past participle): e.g. "Exhausted from the journey, he..." / "Convinced she was right, ..."
+6. Short punchy statement: e.g. "It was over." / "She knew." / "Nothing moved."
+
+OPENER FEEDBACK RULES:
+- PRAISE (type "praise", dimension "O"): When the student uses one of the 6 opener types, praise it and NAME the type. In the suggestion field or as part of what you highlight, say which type it is. Example: praise phrase "Silently, the cat crept" — this is an adverb (-ly) opener.
+- SUGGESTION (type "suggestion", dimension "O"): If most sentences start the same way (e.g. all starting with "I" or "The"), pick one sentence and suggest rewriting it with a specific opener type. Give the FULL rewritten example using the student's own words. Example: phrase "The cat crept across the room", suggestion "Try an adverb opener: 'Silently, the cat crept across the room.'"
+- Count how many DIFFERENT opener types the student uses. If fewer than 3 types, suggest trying a new type they haven't used yet.
+- COMMA RULE: Remind students that -ly openers, -ing openers, prepositional phrase openers, and -ed openers need a COMMA after them. If a student uses one of these openers but forgets the comma, flag it as a grammar annotation.
+` : ""}ANNOTATION TYPES (show ALL feedback at once, not in batches):
 
 1. "spelling" — ONLY actual spelling mistakes (wrong letters, misspelled words). Shown in red.
    - "phrase" = the EXACT misspelled word from the student's writing
@@ -114,9 +129,25 @@ ANNOTATION TYPES (show ALL feedback at once, not in batches):
      * Misspelling: phrase "ther", suggestion "their"
      * Misspelling: phrase "freind", suggestion "friend"
    - This type is ONLY for words that are not real English words (misspelled). Do NOT put grammar errors here.
+   - IMPORTANT: American spellings (color, favorite, organize, traveled, center, gray, etc.) are NOT spelling errors. Use "american_spelling" type for those instead.
    - Maximum 3 spelling annotations. Pick the most important ones.
 
+5. "american_spelling" — American English spelling that differs from British English. Shown in purple (informational, not an error).
+   - "phrase" = the EXACT American-spelled word from the student's writing
+   - "suggestion" = the British English spelling
+   - This is NOT an error — just a gentle note about the British English form.
+   - Examples:
+     * phrase "color", suggestion "colour"
+     * phrase "favorite", suggestion "favourite"
+     * phrase "organize", suggestion "organise"
+     * phrase "traveled", suggestion "travelled"
+     * phrase "center", suggestion "centre"
+     * phrase "gray", suggestion "grey"
+   - Only flag words that are clearly American vs British spelling differences. If unsure, do NOT flag it.
+   - Maximum 3 american_spelling annotations.
+
 2. "grammar" — grammar, punctuation, capitalisation, tense, and word choice errors. Shown in orange.
+   - IMPORTANT: Use British English as the standard. British spellings (colour, favourite, organise, travelled, centre) are CORRECT.
    - "phrase" = the EXACT erroneous text from the student's writing (keep it short — usually one or two words)
    - "suggestion" = the corrected version (just the fixed text, NOT "wrong → right" format)
    - Examples of GRAMMAR errors:
@@ -155,7 +186,7 @@ RULES:
 4. Keep language simple and friendly — you're talking to a child.
 5. ONLY analyse the dimensions listed above. Do NOT include other VCOP dimensions.
 6. Maximum 3 "spelling" annotations AND maximum 3 "grammar" annotations. Pick the most critical errors in each category.
-${feedbackDepthRule}
+7. FEEDBACK LEVEL: Your suggestions should match the TARGET year standard described above. At higher levels, push for more sophisticated vocabulary, complex sentence structures, and advanced techniques. At lower levels, keep suggestions simple and achievable.
 8. Return ${minAnnotations}-12 annotations total for a good balance of feedback.
 9. Show ALL feedback at once. The student will see everything in one go.
 10. CRITICAL — NEVER mark a correctly spelled word as a spelling error. Only mark words that are ACTUALLY misspelled or have ACTUAL grammar errors. If a word is spelled correctly, do NOT create a spelling annotation for it. Double-check every spelling annotation before including it.
@@ -167,6 +198,7 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
     { "phrase": "becuase", "suggestion": "because", "type": "spelling" },
     { "phrase": "i", "suggestion": "I", "type": "grammar" },
     { "phrase": "keep", "suggestion": "keeps", "type": "grammar" },
+    { "phrase": "color", "suggestion": "colour", "type": "american_spelling" },
     { "phrase": "exact text from writing", "suggestion": "Try using a more exciting word like...", "type": "suggestion", "dimension": "V" },
     { "phrase": "exact text from writing", "type": "praise", "dimension": "C" }
   ]
@@ -180,7 +212,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { text, sessionId, studentId, vcopFocus, topic, extraInstructions, feedbackMode, feedbackDepth, submissionId: existingSubmissionId, iterationNumber, previousText, previousAnnotations } = req.body || {};
+  const { text, sessionId, studentId, vcopFocus, topic, extraInstructions, feedbackMode, feedbackLevel, submissionId: existingSubmissionId, iterationNumber, previousText, previousAnnotations } = req.body || {};
 
   if (!text || typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "Please provide some writing to analyse." });
@@ -188,7 +220,7 @@ export default async function handler(req, res) {
 
   try {
     const currentIteration = iterationNumber || 1;
-    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackDepth);
+    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel);
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
