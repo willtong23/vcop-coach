@@ -20,22 +20,31 @@ function buildGradingPrompt(actualYear) {
     ? `The student is currently in ${actualYear.label} (Year ${actualYear.year}).`
     : "The student's actual year level is unknown.";
 
-  return `You are an experienced UK primary/secondary English teacher assessing a student's writing level using the Oxford Writing Criterion Scale (OWCS) from the Big Writing methodology.
+  return `You are an experienced UK primary/secondary English teacher assessing a student's writing level against UK National Curriculum year-level expectations.
 
 ${yearContext}
 
+Use the following Oxford Writing Criterion Scale internally to help you judge the appropriate Year level:
 ${VCOP_GRADING_KNOWLEDGE}
 
-IMPORTANT: Grade the writing at its ACTUAL level, NOT the student's year group. A Y4 student can write at Standard 6. A Y6 student can write at Standard 2. Be honest and accurate. Base your assessment on what is CONSISTENTLY demonstrated throughout the writing.
+Mapping guide (Oxford Standard → Year level):
+- Standard 1-2 → Y1-2
+- Standard 3 → Y3
+- Standard 4 → Y4
+- Standard 5 → Y5
+- Standard 6 → Y6
+- Standard 7 → Y7-8 or Y9+
+
+IMPORTANT: Grade the writing at its ACTUAL level, NOT the student's year group. A Y4 student can write at Y7-8 level. A Y6 student can write at Y3 level. Be honest and accurate.
 
 Respond with ONLY valid JSON, no other text:
 {
-  "level": "Standard 4",
+  "level": "Y5",
   "reason": "One sentence explaining why, referencing specific VCOP evidence from the writing"
 }
 
-The "level" should use the Oxford scale: "Standard 1", "Standard 2", ..., "Standard 7".
-The "reason" should be ONE short sentence (under 30 words), citing specific evidence from the writing (e.g. which connectives, openers, punctuation, vocabulary choices).`;
+The "level" should be like "Y3", "Y4", "Y5", "Y6", "Y7-8", or "Y9+" etc.
+The "reason" should be ONE short sentence (under 25 words), citing specific evidence from the writing.`;
 }
 
 export default async function handler(req, res) {
