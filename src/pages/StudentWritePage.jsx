@@ -47,8 +47,9 @@ export default function StudentWritePage() {
   const [feedbackAlreadyDone, setFeedbackAlreadyDone] = useState(false);
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
-  // Feedback level slider (1-3, default 1)
+  // Feedback sliders (1-3, default 1)
   const [feedbackLevel, setFeedbackLevel] = useState(1);
+  const [feedbackAmount, setFeedbackAmount] = useState(1);
 
   // 10 toggles, ALL default OFF — student sees clean text first
   const [hiddenDimensions, setHiddenDimensions] = useState(new Set([
@@ -266,7 +267,7 @@ export default function StudentWritePage() {
         body: JSON.stringify({
           text, sessionId: session.id, studentId: user.studentId,
           vcopFocus: session.vcopFocus, topic: session.topic,
-          extraInstructions: session.extraInstructions, feedbackLevel,
+          extraInstructions: session.extraInstructions, feedbackLevel, feedbackAmount,
         }),
       });
       if (!res.ok) {
@@ -303,7 +304,7 @@ export default function StudentWritePage() {
         body: JSON.stringify({
           text: editText, sessionId: session.id, studentId: user.studentId,
           vcopFocus: session.vcopFocus, topic: session.topic,
-          extraInstructions: session.extraInstructions, feedbackLevel,
+          extraInstructions: session.extraInstructions, feedbackLevel, feedbackAmount,
           submissionId, iterationNumber: newVersion,
           previousText: prevIteration.text, previousAnnotations: prevIteration.annotations,
         }),
@@ -388,19 +389,22 @@ export default function StudentWritePage() {
                   />
                   <SpeechInput onTranscript={handleSpeechTranscript} disabled={loading} />
                 </div>
-                <div className="feedback-depth-slider">
-                  <div className="feedback-depth-label">Feedback level</div>
-                  <div className="feedback-depth-track">
-                    <span className="feedback-depth-end">1</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="3"
-                      value={feedbackLevel}
+                <div className="feedback-sliders">
+                  <div className="feedback-slider-row">
+                    <span className="feedback-slider-label">Level</span>
+                    <span className="feedback-slider-end">1</span>
+                    <input type="range" min="1" max="3" value={feedbackLevel}
                       onChange={(e) => setFeedbackLevel(Number(e.target.value))}
-                      className="feedback-depth-input"
-                    />
-                    <span className="feedback-depth-end">3</span>
+                      className="feedback-depth-input" />
+                    <span className="feedback-slider-end">3</span>
+                  </div>
+                  <div className="feedback-slider-row">
+                    <span className="feedback-slider-label">Amount</span>
+                    <span className="feedback-slider-end">1</span>
+                    <input type="range" min="1" max="3" value={feedbackAmount}
+                      onChange={(e) => setFeedbackAmount(Number(e.target.value))}
+                      className="feedback-depth-input" />
+                    <span className="feedback-slider-end">3</span>
                   </div>
                 </div>
                 <button className="analyze-button" onClick={handleSubmit} disabled={loading || !text.trim()}>

@@ -18,7 +18,7 @@ function getActualYear(studentId) {
   return YEAR_GROUP_MAP[prefix] || null;
 }
 
-function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext) {
+function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext, feedbackAmount) {
   const dimensions = (vcopFocus && vcopFocus.length > 0 ? vcopFocus : ["V", "C", "O", "P"]);
 
   const dimensionDescriptions = {
@@ -33,6 +33,7 @@ function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, it
     .join("\n");
 
   const level = feedbackLevel || 1;
+  const amount = feedbackAmount || 1;
   const dimCount = dimensions.length;
   const actualYear = getActualYear(studentId);
   const baseYear = actualYear ? actualYear.year : 5; // default Y5 if unknown
@@ -94,7 +95,15 @@ Feedback level: ${level}/3. You are evaluating at ${targetYear <= 6 ? `Y${target
 ${getYearExpectations(targetYear)}
 ${level >= 2 ? "Because this is above the student's actual year, push them with more ambitious suggestions — ask for more precise vocabulary, more complex sentence structures, and higher-level techniques. But remain encouraging." : "Match suggestions to what is realistic for this year group."}`;
 
-  const minAnnotations = Math.max(dimCount * 2 + 2, 6);
+  // Amount controls per-dimension counts: 1 = 1 each, 2 = 1-2 each, 3 = 2-3 each
+  const praisePerDim = amount === 1 ? 1 : amount === 2 ? "1-2" : "2-3";
+  const suggPerDim = amount === 1 ? 1 : amount === 2 ? "1-2" : "2-3";
+  const minPraise = amount === 1 ? 1 : amount === 2 ? 1 : 2;
+  const maxPraise = amount === 1 ? 1 : amount === 2 ? 2 : 3;
+  const minSugg = amount === 1 ? 1 : amount === 2 ? 1 : 2;
+  const maxSugg = amount === 1 ? 1 : amount === 2 ? 2 : 3;
+  const minAnnotations = dimCount * (minPraise + minSugg) + 2;
+  const maxAnnotations = dimCount * (maxPraise + maxSugg) + 6;
 
   let prompt = `You are a warm, encouraging English teacher for primary school students (ages 7-11). You analyse student writing using selected dimensions from the VCOP framework and return inline annotations.
 
@@ -210,10 +219,11 @@ RULES:
    - Level 2: Judge 1-2 years ABOVE actual year. Expect more than usual. Push for varied sentence structures, discourse markers, more precise vocabulary. Suggestions should be ambitious (e.g. "try a relative clause here", "use a semicolon to link these ideas").
    - Level 3: Judge 3+ years ABOVE actual year. Expect near-secondary level. Demand rhetorical techniques, sophisticated vocabulary, complex multi-clause sentences, advanced punctuation for effect. Suggestions should be challenging (e.g. "use a tricolon for emphasis", "try an antithesis to create contrast", "embed a subordinate clause").
    Current feedback level is ${level}/3, targeting Y${targetYear} standard. Your suggestions MUST reflect this target — ${level === 1 ? "keep them simple and age-appropriate" : level === 2 ? "push beyond basics, expect more sophisticated writing" : "demand advanced techniques, treat this as secondary-level writing"}.
-8. Return ${minAnnotations}-12 annotations total for a good balance of feedback.
+8. Return ${minAnnotations}-${maxAnnotations} annotations total. Feedback amount is ${amount}/3.
 9. Show ALL feedback at once. The student will see everything in one go.
 10. CRITICAL — NEVER mark a correctly spelled word as a spelling error. Only mark words that are ACTUALLY misspelled or have ACTUAL grammar errors. If a word is spelled correctly, do NOT create a spelling annotation for it. Double-check every spelling annotation before including it.
-11. MANDATORY DIMENSION COVERAGE — For EACH active VCOP dimension (${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}), you MUST provide at least one praise AND one suggestion. No dimension may be empty. If the writing genuinely has no strength in a dimension, praise the student's attempt and give an encouraging suggestion.
+11. MANDATORY DIMENSION COVERAGE — For EACH active VCOP dimension (${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}), you MUST provide ${praisePerDim} praise AND ${suggPerDim} suggestion annotations. No dimension may be empty. If the writing genuinely has no strength in a dimension, praise the student's attempt and give an encouraging suggestion.
+   AMOUNT GUIDE: Feedback amount is ${amount}/3. Per dimension: ${praisePerDim} praise(s), ${suggPerDim} suggestion(s).${amount === 1 ? " Keep it focused — exactly 1 praise and 1 suggestion per dimension." : amount === 2 ? " Give 1-2 of each per dimension for moderate detail." : " Give 2-3 of each per dimension for thorough, detailed feedback."}
    (a) Every "praise" annotation MUST include a "suggestion" field explaining WHY it's good — what technique or skill the student demonstrated. Never leave praise without an explanation.
    (b) Every "suggestion" annotation MUST give a concrete improvement idea with a specific rewritten example using the student's own words.
 ${dimensions.includes("P") ? `   PUNCTUATION PRAISE STANDARDS:
@@ -274,7 +284,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { text, sessionId, studentId, vcopFocus, topic, extraInstructions, feedbackMode, feedbackLevel, submissionId: existingSubmissionId, iterationNumber, previousText, previousAnnotations } = req.body || {};
+  const { text, sessionId, studentId, vcopFocus, topic, extraInstructions, feedbackMode, feedbackLevel, feedbackAmount, submissionId: existingSubmissionId, iterationNumber, previousText, previousAnnotations } = req.body || {};
 
   if (!text || typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "Please provide some writing to analyse." });
@@ -306,7 +316,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext);
+    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext, feedbackAmount);
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",

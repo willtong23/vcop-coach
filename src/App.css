@@ -909,38 +909,36 @@ body {
 }
 
 /* ========== Feedback Depth Slider ========== */
-.feedback-depth-slider {
+.feedback-sliders {
   background: var(--card-bg);
   border: 2px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 16px;
   margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.feedback-depth-label {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-  margin-bottom: 8px;
-  text-align: center;
-}
-
-.feedback-depth-track {
+.feedback-slider-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.feedback-depth-end {
+.feedback-slider-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  min-width: 56px;
+  flex-shrink: 0;
+}
+
+.feedback-slider-end {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-light);
   flex-shrink: 0;
-  min-width: 36px;
-}
-
-.feedback-depth-end:last-child {
-  text-align: right;
 }
 
 .feedback-depth-input {
