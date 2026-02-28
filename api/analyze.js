@@ -94,7 +94,7 @@ Feedback level: ${level}/3. You are evaluating at ${targetYear <= 6 ? `Y${target
 ${getYearExpectations(targetYear)}
 ${level >= 2 ? "Because this is above the student's actual year, push them with more ambitious suggestions — ask for more precise vocabulary, more complex sentence structures, and higher-level techniques. But remain encouraging." : "Match suggestions to what is realistic for this year group."}`;
 
-  const minAnnotations = Math.max(dimCount + 2, 5);
+  const minAnnotations = Math.max(dimCount * 2 + 2, 6);
 
   let prompt = `You are a warm, encouraging English teacher for primary school students (ages 7-11). You analyse student writing using selected dimensions from the VCOP framework and return inline annotations.
 
@@ -201,11 +201,22 @@ RULES:
 4. Keep language simple and friendly — you're talking to a child.
 5. ONLY analyse the dimensions listed above. Do NOT include other VCOP dimensions.
 6. Maximum 3 "spelling" annotations AND maximum 3 "grammar" annotations. Pick the most critical errors in each category.
-7. FEEDBACK LEVEL: Your suggestions should match the TARGET year standard described above. At higher levels, push for more sophisticated vocabulary, complex sentence structures, and advanced techniques. At lower levels, keep suggestions simple and achievable.
+7. FEEDBACK LEVEL (CRITICAL — this changes your entire approach):
+   - Level 1 (current: ${level}): Judge by the student's actual year group. Praise basic skills done well. Suggestions should be simple, achievable next steps (e.g. "try a different word for 'nice'", "add a comma after your opener").
+   - Level 2: Judge 1-2 years ABOVE actual year. Expect more than usual. Push for varied sentence structures, discourse markers, more precise vocabulary. Suggestions should be ambitious (e.g. "try a relative clause here", "use a semicolon to link these ideas").
+   - Level 3: Judge 3+ years ABOVE actual year. Expect near-secondary level. Demand rhetorical techniques, sophisticated vocabulary, complex multi-clause sentences, advanced punctuation for effect. Suggestions should be challenging (e.g. "use a tricolon for emphasis", "try an antithesis to create contrast", "embed a subordinate clause").
+   Current feedback level is ${level}/3, targeting Y${targetYear} standard. Your suggestions MUST reflect this target — ${level === 1 ? "keep them simple and age-appropriate" : level === 2 ? "push beyond basics, expect more sophisticated writing" : "demand advanced techniques, treat this as secondary-level writing"}.
 8. Return ${minAnnotations}-12 annotations total for a good balance of feedback.
 9. Show ALL feedback at once. The student will see everything in one go.
 10. CRITICAL — NEVER mark a correctly spelled word as a spelling error. Only mark words that are ACTUALLY misspelled or have ACTUAL grammar errors. If a word is spelled correctly, do NOT create a spelling annotation for it. Double-check every spelling annotation before including it.
-11. MANDATORY DIMENSION COVERAGE — You MUST provide at least one annotation (either "suggestion" or "praise") for EACH of these enabled dimensions: ${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}. If the student did well in a dimension, give praise. If there's room to improve, give a suggestion. No dimension should be left without feedback.
+11. MANDATORY DIMENSION COVERAGE — For EACH of these enabled dimensions: ${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}, you MUST provide BOTH:
+   (a) At least one "praise" annotation — find something the student did well in this dimension and quote the EXACT phrase from their writing. Even if the writing is weak in this area, find the best example and praise it specifically.
+   (b) At least one "suggestion" annotation — give a concrete improvement idea for this dimension with a specific rewritten example using the student's own words.
+   No dimension should have ONLY praise or ONLY suggestion — every dimension needs BOTH. This is non-negotiable.
+
+BEFORE responding, verify your checklist:
+${dimensions.map(d => `- ${VCOP_EMOJIS[d]}${d}: has praise? __ has suggestion? __`).join("\n")}
+If ANY dimension is missing a praise or suggestion, add one before outputting.
 
 You MUST respond with ONLY valid JSON in this exact format, no other text:
 {
@@ -214,8 +225,7 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
     { "phrase": "i", "suggestion": "I", "type": "grammar" },
     { "phrase": "keep", "suggestion": "keeps", "type": "grammar" },
     { "phrase": "color", "suggestion": "colour", "type": "american_spelling" },
-    { "phrase": "exact text from writing", "suggestion": "Try using a more exciting word like...", "type": "suggestion", "dimension": "V" },
-    { "phrase": "exact text from writing", "type": "praise", "dimension": "C" }
+${dimensions.map(d => `    { "phrase": "exact text", "suggestion": "Try...", "type": "suggestion", "dimension": "${d}" },\n    { "phrase": "exact text", "type": "praise", "dimension": "${d}" }`).join(",\n")}
   ]
 }`;
 
