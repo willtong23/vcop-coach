@@ -296,6 +296,25 @@ RULES:
    (a) Every "praise" MUST name a specific technique (e.g. "Level 2 connective", "A (Adverb) opener", "WOW word", "parenthesis") and explain WHY it improves the writing. Vague praise like "Keep practising!" or "Good job!" will be REJECTED.
    (b) Every "suggestion" MUST identify a specific problem, name the technique to fix it, and provide a concrete rewritten example using the student's own words. Vague suggestions like "Try more punctuation" or "Use better vocabulary" will be REJECTED.
 
+12b. ⚠️ PRAISE INTEGRITY RULE — NEVER praise a phrase that contains a spelling or grammar error.
+   Before writing ANY "praise" annotation, CHECK the phrase for:
+   - Spelling mistakes
+   - Grammar errors (wrong tense, missing article, subject-verb disagreement)
+   - HOMOPHONE ERRORS (these are the most commonly missed!):
+     * there / their / they're — "there cage" is WRONG (should be "their cage"), do NOT praise it
+     * your / you're — "your going" is WRONG (should be "you're going")
+     * its / it's — "it's tail" is WRONG (should be "its tail")
+     * to / too / two — "to big" is WRONG (should be "too big")
+     * where / wear / were — "where did you where it" is WRONG
+   If the phrase has ANY error, you MUST NOT praise it. Instead, flag the error as a "spelling" or "grammar" annotation and find a DIFFERENT phrase to praise for that dimension.
+
+12c. ⚠️ DIMENSION CLASSIFICATION ACCURACY — every annotation's "dimension" MUST match the actual VCOP category:
+   - "V" (Vocabulary) = word CHOICE — WOW words, dead word upgrades, sensory language, figurative language. ONLY about which words are chosen.
+   - "C" (Connectives) = LINKING WORDS — and, but, so, because, although, however, despite, etc. ONLY about connective words that join clauses or ideas.
+   - "O" (Openers) = SENTENCE STARTERS — ISPACED types (how a sentence begins). ONLY about the first word/phrase of a sentence.
+   - "P" (Punctuation) = PUNCTUATION MARKS — full stops, commas, semicolons, colons, dashes, speech marks, exclamation marks, question marks. ONLY about punctuation symbols.
+   A connective word like "so" or "because" is ALWAYS dimension "C", never "P". A WOW word is ALWAYS dimension "V", never "O". Do NOT mix dimensions.
+
 ${dimensions.includes("P") ? `13. PUNCTUATION ANALYSIS CHECKLIST — work through these IN ORDER before writing P annotations:
    (a) Full stops & capitals: Are sentence boundaries correct? Any run-on sentences or comma splices? (If yes → grammar annotation, NOT praise)
    (b) Run-on sentences: Find the longest sentence. Does it need breaking up? Where exactly should it be split? (If yes → suggestion with exact split point)
