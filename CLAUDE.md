@@ -90,7 +90,25 @@ studentProfiles/{studentId}
 - `POST /api/grade` — AI 寫作水平評級（英國 National Curriculum 標準，不封頂）
 - `POST /api/update-profile` — 學生 Profile 更新（Claude Haiku 分析 annotations → 更新 `studentProfiles/{studentId}`，輸入 `{ studentId, annotations, sessionTopic }`）
 
-## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context，2026-02-28 分組顯示）
+## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context，2026-02-28 分組顯示，2026-02-28 2-step pipeline 重構）
+
+### 2-Step Pipeline 架構（2026-02-28 重構）
+- **舊架構**：單一 `buildSystemPrompt()` ~25,000 chars (~6,000 tokens)，所有邏輯（spelling, grammar, VCOP, profile, level/amount）塞在一個 prompt 裡，Haiku 無法同時遵守所有規則
+- **新架構**：拆成 2 個獨立 API 呼叫，各自專注一件事
+  - **Step 1 — Spelling & Grammar**（`buildSpellingGrammarPrompt()`，~1,200 chars）
+    - 只管拼寫錯誤、文法錯誤（含 homophones）、美式拼法
+    - 明確的 homophone checklist（there/their/they're, your/you're 等）
+    - 首字大寫規則 + 具體範例
+    - max_tokens: 1024
+  - **Step 2 — VCOP Analysis**（`buildVcopPrompt()`，~3,000 chars）
+    - 只管 V/C/O/P 的 praise + suggestion
+    - 接收 Step 1 的 `errorPhrases[]` → 知道哪些句子有錯，**不會拿有錯的句子來讚美**
+    - 根據 feedbackLevel/feedbackAmount 動態調整期望值
+    - 注入 studentProfile 做個人化回饋
+  - **Merge**：Step 1 annotations + Step 2 annotations 合併返回
+- **效果**：prompt 總長度從 ~25,000 chars 降到 ~4,200 chars（**83% 減少**），回饋品質大幅提升
+- **Revision flow**（v2+）不受影響，仍是單一呼叫 `buildRevisionPrompt()`
+- `VCOP_KNOWLEDGE` 不再注入 analyze.js prompt（只在 `grade.js` 使用）
 
 ### VCOP 教學方法論知識庫
 - 檔案：`/api/vcop-knowledge.js`，匯出 `VCOP_KNOWLEDGE`（回饋用）和 `VCOP_GRADING_KNOWLEDGE`（評分用）
