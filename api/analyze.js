@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { FieldValue } from "firebase-admin/firestore";
 import { getDb } from "./_firebase.js";
+import { VCOP_KNOWLEDGE } from "./vcop-knowledge.js";
 
 const client = new Anthropic();
 
@@ -124,7 +125,9 @@ ${level >= 2 ? "Because this is above the student's actual year, push them with 
   const minAnnotations = dimCount * (minPraise + minSugg) + 2;
   const maxAnnotations = dimCount * (maxPraise + maxSugg) + 6;
 
-  let prompt = `You are a warm, encouraging English teacher for primary school students (ages 7-11). You analyse student writing using selected dimensions from the VCOP framework and return inline annotations.
+  let prompt = `You are a warm, encouraging English teacher for primary school students (ages 7-11). You analyse student writing using the Big Writing & VCOP framework and return inline annotations.
+
+${VCOP_KNOWLEDGE}
 
 TODAY'S FOCUS DIMENSIONS:
 ${focusList}

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { VCOP_GRADING_KNOWLEDGE } from "./vcop-knowledge.js";
 
 const client = new Anthropic();
 
@@ -19,29 +20,22 @@ function buildGradingPrompt(actualYear) {
     ? `The student is currently in ${actualYear.label} (Year ${actualYear.year}).`
     : "The student's actual year level is unknown.";
 
-  return `You are an experienced UK primary/secondary English teacher assessing a student's writing level against the English National Curriculum standards.
+  return `You are an experienced UK primary/secondary English teacher assessing a student's writing level using the Oxford Writing Criterion Scale (OWCS) from the Big Writing methodology.
 
 ${yearContext}
 
-UK NATIONAL CURRICULUM WRITING EXPECTATIONS BY YEAR:
-- Y1-2: Simple sentences, basic phonics spelling, capital letters and full stops, "and" as main connective
-- Y3: Paragraphs emerging, varied connectives (but, so, because), some adjectives, mostly correct basic punctuation
-- Y4: Basic sentence structure correct, consistent full stops and capitals, simple connectives (and, but, because, so), beginning to use varied sentence openers
-- Y5: Organised paragraphs, varied sentence openers (time, -ing, adverb), expanding vocabulary with some ambitious words, using commas in lists and after fronted adverbials
-- Y6: Tone control, complex sentences (relative clauses, subordinate clauses), precise and varied vocabulary, semicolons/colons/dashes, cohesive paragraphs
-- Y7-8: Sophisticated vocabulary, deliberate stylistic choices, controlled varied sentence structures for effect, confident use of all punctuation, clear authorial voice
-- Y9+: Nuanced tone and voice, advanced rhetorical techniques, masterful control of language for purpose and audience
+${VCOP_GRADING_KNOWLEDGE}
 
-IMPORTANT: Grade the writing at its ACTUAL level, NOT the student's year group. A Y4 student can write at Y7 level. A Y6 student can write at Y3 level. Be honest and accurate.
+IMPORTANT: Grade the writing at its ACTUAL level, NOT the student's year group. A Y4 student can write at Standard 6. A Y6 student can write at Standard 2. Be honest and accurate. Base your assessment on what is CONSISTENTLY demonstrated throughout the writing.
 
 Respond with ONLY valid JSON, no other text:
 {
-  "level": "Y5",
-  "reason": "One sentence explaining why this level, referencing specific evidence from the writing"
+  "level": "Standard 4",
+  "reason": "One sentence explaining why, referencing specific VCOP evidence from the writing"
 }
 
-The "level" should be like "Y3", "Y4", "Y5", "Y6", "Y7-8", or "Y9+" etc.
-The "reason" should be ONE short sentence (under 25 words), citing specific evidence from the writing.`;
+The "level" should use the Oxford scale: "Standard 1", "Standard 2", ..., "Standard 7".
+The "reason" should be ONE short sentence (under 30 words), citing specific evidence from the writing (e.g. which connectives, openers, punctuation, vocabulary choices).`;
 }
 
 export default async function handler(req, res) {
