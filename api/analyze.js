@@ -46,7 +46,7 @@ GRAMMAR ERRORS (type "grammar"):
   * Every sentence MUST start with a capital letter.
   * "i" must ALWAYS be "I". Also "i'm"→"I'm", "i'll"→"I'll", "i've"→"I've".
   * Proper nouns: days, months, places, names.
-  * Check EVERY sentence beginning.
+  * Check EVERY sentence beginning — including the very FIRST word of the writing. "quietly, i climp" → "Quietly" needs a capital Q.
 - Maximum 3. Pick the most important.
 - Keep "phrase" SHORT — usually just the wrong word(s).
 
