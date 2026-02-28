@@ -22,10 +22,28 @@ function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, it
   const dimensions = (vcopFocus && vcopFocus.length > 0 ? vcopFocus : ["V", "C", "O", "P"]);
 
   const dimensionDescriptions = {
-    V: "Vocabulary — interesting/ambitious word choices",
-    C: "Connectives — words that join ideas (because, however, furthermore, although...)",
-    O: "Openers — how sentences begin. Six types: (1) Adverb opener (-ly words: Silently, Nervously, Suddenly), (2) -ing opener (Running through the forest, Gazing at the stars), (3) Question opener (Have you ever wondered...?), (4) Prepositional phrase opener (Under the bridge, At midnight, During the storm), (5) -ed opener (Exhausted from the journey, Convinced she was right), (6) Short punchy statement (It was over. She knew. Nothing moved.)",
-    P: "Punctuation — varied and purposeful punctuation use (NOT just full stops — those are basic and expected)",
+    V: `Vocabulary — word choices that make writing interesting and precise.
+   Basic: Use interesting/wow words instead of ordinary ones (said → whispered/exclaimed, nice → magnificent/delightful, big → enormous/towering, walked → trudged/sprinted)
+   Intermediate: Sensory language (sounds, sights, textures, smells), precise verbs that show rather than tell, figurative language (simile: "as quiet as a mouse", metaphor: "the classroom was a zoo")
+   Advanced: Word choice that controls tone and atmosphere, technical vocabulary used naturally, connotation awareness (slim vs skinny, curious vs nosy)`,
+    C: `Connectives — words and phrases that join ideas and control the flow of writing.
+   Basic: and, but, so, because, then, or, when
+   Intermediate: meanwhile, however, although, furthermore, on the other hand, as a result, in addition, despite, even though, whereas
+   Advanced: Discourse markers that control paragraph flow (consequently, nevertheless, in contrast), subordinating conjunctions creating complex sentences, connectives that show subtle relationships between ideas`,
+    O: `Openers — how sentences begin. Six specific types:
+   (1) Adverb opener (-ly words): Silently, Nervously, Suddenly, Carefully, Eagerly
+   (2) -ing opener (action words): Running through the forest, Gazing at the stars, Trembling with fear
+   (3) Question opener: Have you ever wondered...? What would you do if...? Can you imagine...?
+   (4) Prepositional phrase opener (where/when): Under the bridge, At midnight, During the storm, Behind the door
+   (5) -ed opener (past participle): Exhausted from the journey, Convinced she was right, Shocked by the noise
+   (6) Short punchy statement: It was over. She knew. Nothing moved. Silence.
+   COMMA RULE: -ly, -ing, prepositional, and -ed openers MUST be followed by a comma.
+   Feedback should identify which types the student used and suggest types they haven't tried yet.`,
+    P: `Punctuation — varied and purposeful punctuation use (NOT just full stops — those are basic and expected).
+   Basic: Full stops, capital letters, commas in lists (apples, bananas, and oranges)
+   Intermediate: Apostrophes (it's, don't, the dog's bone), speech marks ("Hello," said Tom), commas after openers (Slowly, he turned), question marks, exclamation marks
+   Advanced: Semicolons linking related ideas; colons introducing lists or explanations: dashes for dramatic effect — like this, ellipsis for suspense..., brackets for extra information (which is optional)
+   Do NOT praise basic full stops — only praise noteworthy punctuation choices.`,
   };
 
   const focusList = dimensions
@@ -95,13 +113,14 @@ Feedback level: ${level}/3. You are evaluating at ${targetYear <= 6 ? `Y${target
 ${getYearExpectations(targetYear)}
 ${level >= 2 ? "Because this is above the student's actual year, push them with more ambitious suggestions — ask for more precise vocabulary, more complex sentence structures, and higher-level techniques. But remain encouraging." : "Match suggestions to what is realistic for this year group."}`;
 
-  // Amount controls per-dimension counts: 1 = 1 each, 2 = 1-2 each, 3 = 2-3 each
-  const praisePerDim = amount === 1 ? 1 : amount === 2 ? "1-2" : "2-3";
-  const suggPerDim = amount === 1 ? 1 : amount === 2 ? "1-2" : "2-3";
-  const minPraise = amount === 1 ? 1 : amount === 2 ? 1 : 2;
-  const maxPraise = amount === 1 ? 1 : amount === 2 ? 2 : 3;
-  const minSugg = amount === 1 ? 1 : amount === 2 ? 1 : 2;
-  const maxSugg = amount === 1 ? 1 : amount === 2 ? 2 : 3;
+  // Amount controls per-dimension counts — driven by level AND amount sliders
+  const effectiveAmount = Math.max(level, amount); // higher of level or amount
+  const praisePerDim = effectiveAmount === 1 ? 1 : effectiveAmount === 2 ? "1-2" : "2-3";
+  const suggPerDim = effectiveAmount === 1 ? 1 : effectiveAmount === 2 ? "1-2" : "2-3";
+  const minPraise = effectiveAmount === 1 ? 1 : effectiveAmount === 2 ? 1 : 2;
+  const maxPraise = effectiveAmount === 1 ? 1 : effectiveAmount === 2 ? 2 : 3;
+  const minSugg = effectiveAmount === 1 ? 1 : effectiveAmount === 2 ? 1 : 2;
+  const maxSugg = effectiveAmount === 1 ? 1 : effectiveAmount === 2 ? 2 : 3;
   const minAnnotations = dimCount * (minPraise + minSugg) + 2;
   const maxAnnotations = dimCount * (maxPraise + maxSugg) + 6;
 
@@ -215,15 +234,15 @@ RULES:
 5. ONLY analyse the dimensions listed above. Do NOT include other VCOP dimensions.
 6. Maximum 3 "spelling" annotations AND maximum 3 "grammar" annotations. Pick the most critical errors in each category.
 7. FEEDBACK LEVEL (CRITICAL — this changes your entire approach):
-   - Level 1 (current: ${level}): Judge by the student's actual year group. Praise basic skills done well. Suggestions should be simple, achievable next steps (e.g. "try a different word for 'nice'", "add a comma after your opener").
-   - Level 2: Judge 1-2 years ABOVE actual year. Expect more than usual. Push for varied sentence structures, discourse markers, more precise vocabulary. Suggestions should be ambitious (e.g. "try a relative clause here", "use a semicolon to link these ideas").
-   - Level 3: Judge 3+ years ABOVE actual year. Expect near-secondary level. Demand rhetorical techniques, sophisticated vocabulary, complex multi-clause sentences, advanced punctuation for effect. Suggestions should be challenging (e.g. "use a tricolon for emphasis", "try an antithesis to create contrast", "embed a subordinate clause").
-   Current feedback level is ${level}/3, targeting Y${targetYear} standard. Your suggestions MUST reflect this target — ${level === 1 ? "keep them simple and age-appropriate" : level === 2 ? "push beyond basics, expect more sophisticated writing" : "demand advanced techniques, treat this as secondary-level writing"}.
-8. Return ${minAnnotations}-${maxAnnotations} annotations total. Feedback amount is ${amount}/3.
+   - Level 1: Judge by the student's actual year group. Focus on "Basic" items from each VCOP dimension. Praise basic skills done well. Suggestions should be simple, achievable next steps. Per dimension: 1 praise + 1 suggestion.
+   - Level 2: Judge 1-2 years ABOVE actual year. Focus on "Intermediate" items from each VCOP dimension. Push for varied sentence structures, discourse markers, more precise vocabulary, sensory language. Per dimension: 1-2 praises + 1-2 suggestions.
+   - Level 3: Judge 3+ years ABOVE actual year. Focus on "Advanced" items from each VCOP dimension. Demand rhetorical techniques, sophisticated vocabulary, complex multi-clause sentences, advanced punctuation for effect. Suggestions should be detailed and challenging. Per dimension: 2-3 praises + 2-3 suggestions. This is the MOST DETAILED level — give thorough, in-depth feedback.
+   Current feedback level is ${level}/3, targeting Y${targetYear} standard. Your suggestions MUST reflect this target — ${level === 1 ? "keep them simple and age-appropriate, focus on Basic-level VCOP skills" : level === 2 ? "push beyond basics, focus on Intermediate-level VCOP skills" : "demand Advanced-level VCOP skills, give the MOST thorough and detailed feedback possible"}.
+8. Return ${minAnnotations}-${maxAnnotations} annotations total. Feedback amount is ${effectiveAmount}/3 (per dimension: ${praisePerDim} praise + ${suggPerDim} suggestion).
 9. Show ALL feedback at once. The student will see everything in one go.
 10. CRITICAL — NEVER mark a correctly spelled word as a spelling error. Only mark words that are ACTUALLY misspelled or have ACTUAL grammar errors. If a word is spelled correctly, do NOT create a spelling annotation for it. Double-check every spelling annotation before including it.
 11. MANDATORY DIMENSION COVERAGE — For EACH active VCOP dimension (${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}), you MUST provide ${praisePerDim} praise AND ${suggPerDim} suggestion annotations. No dimension may be empty. If the writing genuinely has no strength in a dimension, praise the student's attempt and give an encouraging suggestion.
-   AMOUNT GUIDE: Feedback amount is ${amount}/3. Per dimension: ${praisePerDim} praise(s), ${suggPerDim} suggestion(s).${amount === 1 ? " Keep it focused — exactly 1 praise and 1 suggestion per dimension." : amount === 2 ? " Give 1-2 of each per dimension for moderate detail." : " Give 2-3 of each per dimension for thorough, detailed feedback."}
+   AMOUNT GUIDE: Per dimension: ${praisePerDim} praise(s) + ${suggPerDim} suggestion(s).${effectiveAmount === 1 ? " Keep it focused — exactly 1 praise and 1 suggestion per dimension." : effectiveAmount === 2 ? " Give 1-2 of each per dimension for moderate detail." : " Give 2-3 of each per dimension for thorough, detailed feedback. Level 3 = MOST detailed — do NOT give fewer annotations than lower levels."}
    (a) Every "praise" annotation MUST include a "suggestion" field explaining WHY it's good — what technique or skill the student demonstrated. Never leave praise without an explanation.
    (b) Every "suggestion" annotation MUST give a concrete improvement idea with a specific rewritten example using the student's own words.
 ${dimensions.includes("P") ? `   PUNCTUATION PRAISE STANDARDS:
@@ -320,7 +339,7 @@ export default async function handler(req, res) {
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1536,
+      max_tokens: (feedbackLevel || 1) >= 3 ? 4096 : 2048,
       system: systemPrompt,
       messages: [
         {
