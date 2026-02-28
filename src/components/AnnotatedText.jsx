@@ -188,6 +188,7 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
                       {dimEmoji} {dimLabel}
                     </span>
                     <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
+                    {a.suggestion && <span className="feedback-card-explanation">{a.suggestion}</span>}
                   </div>
                 );
               })}

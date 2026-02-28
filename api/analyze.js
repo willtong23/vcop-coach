@@ -25,7 +25,7 @@ function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, it
     V: "Vocabulary — interesting/ambitious word choices",
     C: "Connectives — words that join ideas (because, however, furthermore, although...)",
     O: "Openers — how sentences begin. Six types: (1) Adverb opener (-ly words: Silently, Nervously, Suddenly), (2) -ing opener (Running through the forest, Gazing at the stars), (3) Question opener (Have you ever wondered...?), (4) Prepositional phrase opener (Under the bridge, At midnight, During the storm), (5) -ed opener (Exhausted from the journey, Convinced she was right), (6) Short punchy statement (It was over. She knew. Nothing moved.)",
-    P: "Punctuation — correct and varied punctuation use",
+    P: "Punctuation — varied and purposeful punctuation use (NOT just full stops — those are basic and expected)",
   };
 
   const focusList = dimensions
@@ -189,10 +189,14 @@ OPENER FEEDBACK RULES:
    - "suggestion" = what to try instead, be specific and give an example
    - "dimension" = one of ${dimensions.join("/")}
 
-4. "praise" — things done well.
+4. "praise" — things done well. MUST include an explanation of WHY it's good.
    - "phrase" = exact text from writing (the specific words that are good)
+   - "suggestion" = REQUIRED explanation of why this is good. Be specific about the technique or skill demonstrated.
+     BAD: (no suggestion field, or empty)
+     GOOD: "You used specific detail to support your point, naming your teacher and explaining what makes the subject interesting. This makes your writing convincing."
+     GOOD: "This is an adverb (-ly) opener — it tells the reader HOW the action happened right from the start."
+     GOOD: "You used a comma to separate items in a list — this makes your sentence clear and easy to read."
    - "dimension" = one of ${dimensions.join("/")}
-   - No "suggestion" needed.
 
 RULES:
 1. Be encouraging and specific — point out EXACTLY what the student did well with quotes from their writing.
@@ -209,10 +213,14 @@ RULES:
 8. Return ${minAnnotations}-12 annotations total for a good balance of feedback.
 9. Show ALL feedback at once. The student will see everything in one go.
 10. CRITICAL — NEVER mark a correctly spelled word as a spelling error. Only mark words that are ACTUALLY misspelled or have ACTUAL grammar errors. If a word is spelled correctly, do NOT create a spelling annotation for it. Double-check every spelling annotation before including it.
-11. MANDATORY DIMENSION COVERAGE — For EACH of these enabled dimensions: ${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}, you MUST provide BOTH:
-   (a) At least one "praise" annotation — find something the student did well in this dimension and quote the EXACT phrase from their writing. Even if the writing is weak in this area, find the best example and praise it specifically.
-   (b) At least one "suggestion" annotation — give a concrete improvement idea for this dimension with a specific rewritten example using the student's own words.
-   No dimension should have ONLY praise or ONLY suggestion — every dimension needs BOTH. This is non-negotiable.
+11. MANDATORY DIMENSION COVERAGE — For EACH active VCOP dimension (${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}), you MUST provide at least one praise AND one suggestion. No dimension may be empty. If the writing genuinely has no strength in a dimension, praise the student's attempt and give an encouraging suggestion.
+   (a) Every "praise" annotation MUST include a "suggestion" field explaining WHY it's good — what technique or skill the student demonstrated. Never leave praise without an explanation.
+   (b) Every "suggestion" annotation MUST give a concrete improvement idea with a specific rewritten example using the student's own words.
+${dimensions.includes("P") ? `   PUNCTUATION PRAISE STANDARDS:
+   - Full stops at the end of sentences are BASIC and EXPECTED — do NOT praise them. They are not noteworthy.
+   - Worthy punctuation to praise: commas in lists, commas after openers, dashes for extra information, question marks, exclamation marks, brackets/parentheses, speech marks/quotation marks, semicolons, colons, apostrophes used correctly for possession.
+   - If the student's punctuation has NO noteworthy examples beyond basic full stops, do NOT invent a weak praise. Instead, provide TWO suggestion annotations for P — one simple punctuation to try (e.g. "try adding commas to separate your list") and one more advanced.
+` : ""}
 
 BEFORE responding, verify your checklist:
 ${dimensions.map(d => `- ${VCOP_EMOJIS[d]}${d}: has praise? __ has suggestion? __`).join("\n")}
@@ -225,7 +233,7 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
     { "phrase": "i", "suggestion": "I", "type": "grammar" },
     { "phrase": "keep", "suggestion": "keeps", "type": "grammar" },
     { "phrase": "color", "suggestion": "colour", "type": "american_spelling" },
-${dimensions.map(d => `    { "phrase": "exact text", "suggestion": "Try...", "type": "suggestion", "dimension": "${d}" },\n    { "phrase": "exact text", "type": "praise", "dimension": "${d}" }`).join(",\n")}
+${dimensions.map(d => `    { "phrase": "exact text", "suggestion": "Try...", "type": "suggestion", "dimension": "${d}" },\n    { "phrase": "exact text", "suggestion": "This is good because...", "type": "praise", "dimension": "${d}" }`).join(",\n")}
   ]
 }`;
 
