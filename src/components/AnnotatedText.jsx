@@ -362,17 +362,11 @@ const ERROR_TOGGLES = [
 export function VcopFilterBar({ hiddenDimensions, onToggle, compact }) {
   return (
     <div className={`vcop-inline-filter ${compact ? "vcop-inline-filter-compact" : ""}`}>
-      {VCOP_TOGGLE_GROUPS.map((g) => (
-        <span key={g.dim} className="vcop-toggle-pair">
+      {/* Row 1: Suggestions + Spelling/Grammar */}
+      <div className="vcop-filter-row">
+        {VCOP_TOGGLE_GROUPS.map((g) => (
           <button
-            className={`vcop-inline-filter-btn ${!hiddenDimensions.has(`${g.dim}_praise`) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
-            style={{ "--btn-color": g.color }}
-            onClick={() => onToggle(`${g.dim}_praise`)}
-            title={!hiddenDimensions.has(`${g.dim}_praise`) ? `Hide ${g.label} praise` : `Show ${g.label} praise`}
-          >
-            {compact ? g.dim : g.label} ✅
-          </button>
-          <button
+            key={`${g.dim}_s`}
             className={`vcop-inline-filter-btn ${!hiddenDimensions.has(`${g.dim}_suggestion`) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
             style={{ "--btn-color": g.color }}
             onClick={() => onToggle(`${g.dim}_suggestion`)}
@@ -380,19 +374,33 @@ export function VcopFilterBar({ hiddenDimensions, onToggle, compact }) {
           >
             {compact ? g.dim : g.label} 💡
           </button>
-        </span>
-      ))}
-      {ERROR_TOGGLES.map((t) => (
-        <button
-          key={t.key}
-          className={`vcop-inline-filter-btn ${!hiddenDimensions.has(t.key) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
-          style={{ "--btn-color": t.color }}
-          onClick={() => onToggle(t.key)}
-          title={!hiddenDimensions.has(t.key) ? `Hide ${t.label}` : `Show ${t.label}`}
-        >
-          {t.label}
-        </button>
-      ))}
+        ))}
+        {ERROR_TOGGLES.map((t) => (
+          <button
+            key={t.key}
+            className={`vcop-inline-filter-btn ${!hiddenDimensions.has(t.key) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
+            style={{ "--btn-color": t.color }}
+            onClick={() => onToggle(t.key)}
+            title={!hiddenDimensions.has(t.key) ? `Hide ${t.label}` : `Show ${t.label}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {/* Row 2: Praises */}
+      <div className="vcop-filter-row">
+        {VCOP_TOGGLE_GROUPS.map((g) => (
+          <button
+            key={`${g.dim}_p`}
+            className={`vcop-inline-filter-btn ${!hiddenDimensions.has(`${g.dim}_praise`) ? "active" : ""} ${compact ? "vcop-btn-compact" : ""}`}
+            style={{ "--btn-color": g.color }}
+            onClick={() => onToggle(`${g.dim}_praise`)}
+            title={!hiddenDimensions.has(`${g.dim}_praise`) ? `Hide ${g.label} praise` : `Show ${g.label} praise`}
+          >
+            {compact ? g.dim : g.label} ✅
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

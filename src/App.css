@@ -979,8 +979,14 @@ body {
 /* ========== VCOP Inline Filter Bar (above annotated text) ========== */
 .vcop-inline-filter {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   margin-bottom: 10px;
+}
+
+.vcop-filter-row {
+  display: flex;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
