@@ -77,7 +77,7 @@ feedback/{feedbackId}
 - `POST /api/grammar-check` — 老師點評文法修正（Claude Haiku，回傳 `{ corrected, hasChanges }`）
 - `POST /api/grade` — AI 寫作水平評級（英國 National Curriculum 標準，不封頂）
 
-## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準）
+## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context）
 
 ### 語言標準：British English
 - AI 拼寫檢查以**英式拼法**為標準（colour, favourite, organise, travelled, centre）
@@ -90,6 +90,18 @@ feedback/{feedbackId}
 - 所有 textarea 和文字輸入框都加了 `spellCheck={false} autoCorrect="off" autoCapitalize="off"`
 - 禁止瀏覽器自帶的紅色波浪線拼字檢查，避免與 AI 回饋混淆
 - 涵蓋：學生寫作框、修改編輯器、回饋留言、老師評語、廣播訊息、登入表單、Session 設定
+
+### 過去寫作 Context（個人化回饋）
+- **只在 v1（首次提交）時啟用** — 修改版已有 previousText/previousAnnotations
+- 從 Firestore 查詢該學生最近 5 次 submissions（排除當前），取每篇 `iterations[0]`（第一版原始寫作）
+- 每篇截斷前 300 字，提取 praise + suggestion annotations（各最多 3 條）
+- 注入 system prompt，讓 AI 引用過去好例子給回饋，如：「You used a great -ly opener before: 'Nervously, she opened the letter.' Try one here too!」
+- **正面框架**：只用鼓勵語氣引用過去，禁止負面比較（"you've gotten worse"）
+- **只影響 suggestion/praise**，不影響 spelling/grammar 判斷
+- **查詢失敗不阻斷**：try/catch 包裹，失敗時繼續正常回饋
+- **Token 預算**：5 篇 × 300 字 ≈ 1500 字 context，`max_tokens` 從 1024 提升到 1536
+- **Firestore composite index**：`submissions` 上需要 `studentId` + `createdAt desc` index，首次查詢 console 會給建立連結
+- 相關函數：`buildPastContext()`（格式化過去寫作）、`buildSystemPrompt()` 第 10 個參數 `pastWritingContext`
 
 ### 第一版回饋（v1）
 - **一次列出所有建議**，不分批
@@ -116,7 +128,7 @@ feedback/{feedbackId}
   - **Suggestion（💡）**：如果學生句子開頭重複（全部 I/The 開頭）→ 具體建議用哪種 opener，給出用學生原句改寫的例子
   - 統計學生用了幾種不同的 opener 類型，少於 3 種就建議嘗試新類型
   - **逗號規則**：-ly、-ing、prepositional、-ed opener 後面要加逗號，漏加的歸類為 `grammar` annotation
-- **VCOP 維度強制覆蓋**：每個開啟的維度至少一條回饋（praise 或 suggestion）
+- **VCOP 維度強制覆蓋**：每個開啟的維度必須同時有 praise（✅ 做得好）AND suggestion（💡 建議），兩者缺一不可。Prompt 裡有 pre-output checklist 強制 AI 檢查每個維度的 praise/suggestion 覆蓋
 - **伺服器端驗證**：AI 回傳的 annotations 會被過濾 — phrase 必須在原文中找到精確匹配，否則丟棄；spelling/grammar 的 suggestion 不能和 phrase 相同
 
 ### 顏色系統（視覺分離原則）
@@ -159,7 +171,8 @@ feedback/{feedbackId}
   - Level 2：比實際年級高 2 年（如 20-05 → Y7 標準，要求修辭技巧、段落銜接、語域轉換）
   - Level 3：比實際年級高 4 年（如 20-05 → Y9 標準，要求語氣掌控、高級修辭、多層從句、風格化標點）
 - 計算公式：`targetYear = baseYear + (level - 1) * 2`
-- AI prompt 明確包含：學生實際年級 + 目標評估標準 + 各年級期望值描述
+- AI prompt 明確包含：學生實際年級 + 目標評估標準 + 各年級期望值描述 + 每個 level 的具體建議範例
+- Prompt 裡每個 level 有具體指引：Level 1 = 簡單可達成的建議，Level 2 = 修辭技巧/語域轉換，Level 3 = tricolon/antithesis/subordinate clause 等進階技巧
 - Level 2-3 額外指示 AI push for more ambitious suggestions
 - 值透過 `feedbackLevel` 參數傳入 `/api/analyze`
 - 各年級期望值：
@@ -335,3 +348,5 @@ api/
 - **Spelling 和 Grammar 必須拆開**：早期版本兩者共用 `type: "spelling"`，導致兩個 toggle 控制同一批 annotations，學生無法分別查看。2026-02-28 拆為獨立的 `type: "spelling"` 和 `type: "grammar"`，各自最多 3 個，前端各自獨立過濾。
 - **進步面板分子>分母 bug**：早期版本累加所有修改版的 `revision_good` 數量作為分子，但同一個 v1 issue 在 v2、v3 都會被標為 `revision_good`，導致重複計算。修正：只看最新版的 `revision_good`，用 v1 issue index 去重，分子 cap 在分母以下。
 - **高亮編輯器用 case-sensitive 匹配**：case-insensitive 匹配會導致學生改了大小寫（如 `i`→`I`）後高亮不消失。改用 exact match `text.indexOf(a.phrase)` 解決。
+- **Feedback level slider 沒有實際效果**：原本 prompt 只有一句「match the TARGET year standard」太模糊，AI 行為幾乎不變。修正：每個 level 加入具體建議範例（Level 1: 簡單詞彙替換；Level 3: tricolon、antithesis、semicolon），並在 prompt 末尾重複當前 level 的期望。
+- **VCOP 維度只有 praise 沒有 suggestion（或反之）**：原本規則只要求「at least one annotation (either suggestion or praise)」，AI 常常只給其中一種。修正：明確要求 BOTH praise AND suggestion，加上 pre-output checklist 讓 AI 自我檢查每個維度的覆蓋。
