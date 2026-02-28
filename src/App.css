@@ -20,11 +20,17 @@ body {
   line-height: 1.6;
   color: var(--text);
   background: var(--bg);
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
 }
 
 .app {
   max-width: 800px;
-  margin: 0 auto;
+  margin-left: auto;
+  margin-right: auto;
   padding: 40px 20px 80px;
 }
 
@@ -1120,6 +1126,25 @@ body {
   margin-left: 4px;
 }
 
+/* Attempted annotation (amber) */
+.ann-attempted-wrap {
+  display: inline;
+}
+
+.ann-attempted {
+  color: #D97706;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ann-attempted-badge {
+  display: inline;
+  font-size: 14px;
+  font-weight: 700;
+  color: #D97706;
+  margin-left: 4px;
+}
+
 /* Revised text = purple */
 .ann-revised {
   color: #7C3AED;
@@ -1200,6 +1225,55 @@ body {
   text-decoration-thickness: 2px;
 }
 
+/* ========== Click-to-jump interaction ========== */
+.ann-clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ann-clickable:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 3px;
+}
+
+/* Flash animation when scrolled to */
+@keyframes annFlash {
+  0%, 100% { background: transparent; }
+  20% { background: #fef08a; }
+  60% { background: #fef9c3; }
+}
+
+.ann-flash {
+  animation: annFlash 1.5s ease-out;
+  border-radius: 4px;
+}
+
+/* Back to text button in feedback cards */
+.back-to-text-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text-light);
+  background: var(--border);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.back-to-text-btn:hover {
+  background: #cbd5e1;
+  color: var(--text);
+}
+
 /* ========== Grouped Feedback Cards ========== */
 .annotated-text-container {
   width: 100%;
@@ -1250,6 +1324,11 @@ body {
   color: #065f46;
 }
 
+.feedback-group-attempted .feedback-group-header {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .feedback-card {
   padding: 8px 14px;
   border-bottom: 1px solid #f1f5f9;
@@ -1287,6 +1366,10 @@ body {
 
 .feedback-card-fixed {
   background: #ecfdf5;
+}
+
+.feedback-card-attempted {
+  background: #fffbeb;
 }
 
 .feedback-card-phrase {
@@ -1402,6 +1485,12 @@ body {
 .legend-sample-fixed {
   font-weight: 600;
   color: #16A34A;
+  min-width: 130px;
+}
+
+.legend-sample-attempted {
+  font-weight: 600;
+  color: #D97706;
   min-width: 130px;
 }
 
@@ -2186,6 +2275,19 @@ body {
   min-width: 4px;
 }
 
+.improvement-progress-attempted {
+  position: absolute;
+  height: 100%;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  border-radius: 7px;
+  transition: width 0.6s ease, left 0.6s ease;
+  opacity: 0.6;
+}
+
+.improvement-progress-track {
+  position: relative;
+}
+
 .progress-breakdown {
   display: flex;
   flex-wrap: wrap;
@@ -2394,6 +2496,89 @@ body {
   background: #10B981;
 }
 
+.grade-badge.grade-improved {
+  background: #10B981;
+}
+
+.grade-badge.grade-declined {
+  background: #EF4444;
+}
+
+.grade-arrow-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-light);
+}
+
+.grading-arrow {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-light);
+  margin: 0 2px;
+}
+
+.grading-ai-latest {
+  background: #1d4ed8;
+  box-shadow: 0 0 0 2px #bfdbfe;
+}
+
+/* Student page grading progression */
+.grading-standalone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f0f9ff;
+  border: 2px solid #bae6fd;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+
+.grading-progression {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: var(--radius-sm);
+}
+
+.grading-progression-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 4px;
+}
+
+.grading-level-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  background: #93c5fd;
+  border-radius: 12px;
+}
+
+.grading-level-latest {
+  background: #2563EB;
+  box-shadow: 0 0 0 2px #bfdbfe;
+}
+
+.grading-arrow {
+  font-size: 16px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.grading-trend {
+  font-size: 16px;
+  margin-left: 4px;
+}
+
 /* ========== Raw Text Toggle & Copy ========== */
 .raw-text-controls {
   display: flex;
@@ -2458,5 +2643,129 @@ body {
   white-space: pre-wrap;
   color: var(--text);
   margin: 0;
+}
+
+/* ========== Class Overview Tab ========== */
+.class-overview {
+  margin-top: 8px;
+}
+
+.vcop-averages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vcop-avg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vcop-avg-label {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 130px;
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.vcop-avg-bar-track {
+  flex: 1;
+  height: 16px;
+  background: var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.vcop-avg-bar-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.4s ease;
+  min-width: 4px;
+}
+
+.vcop-avg-value {
+  font-size: 18px;
+  font-weight: 800;
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.weakness-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weakness-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+}
+
+.weakness-count {
+  font-size: 14px;
+  font-weight: 800;
+  color: #dc2626;
+  min-width: 36px;
+  flex-shrink: 0;
+}
+
+.weakness-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #991b1b;
+}
+
+.heatmap-wrapper {
+  overflow-x: auto;
+}
+
+.heatmap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.heatmap-table th {
+  padding: 8px 12px;
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.heatmap-table th:first-child {
+  text-align: left;
+}
+
+.heatmap-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heatmap-student {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.heatmap-cell {
+  text-align: center;
+  font-weight: 800;
+  font-size: 16px;
+  border-radius: 4px;
+}
+
+.heatmap-submissions {
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-light);
 }
 

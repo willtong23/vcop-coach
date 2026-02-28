@@ -68,6 +68,18 @@ broadcasts/{broadcastId}
 
 feedback/{feedbackId}
   ├── studentId, sessionId, mood (1-5), helpedMost[], difficult[], comment, createdAt
+
+studentProfiles/{studentId}
+  ├── lastUpdated (timestamp), totalSubmissions (number)
+  ├── vcop
+  │     ├── vocabulary: { level, strengths[], weaknesses[], recentWowWords[] }
+  │     ├── connectives: { level, highestUsed, pattern }
+  │     ├── openers: { ispacedUsed[], ispacedNeverUsed[], pattern }
+  │     └── punctuation: { level, mastered[], emerging[], notYet[] }
+  ├── spellingPatterns[], grammarPatterns[]
+  ├── personalInstructions (string)
+  ├── teacherNotes[] — { date, comment, sessionTopic }（老師評語同步，最多保留 last 3 在 prompt 中）
+  └── growthNotes[] — AI 自動記錄的成長里程碑（如 "First semicolon used"）
 ```
 
 ## API Endpoints
@@ -76,19 +88,24 @@ feedback/{feedbackId}
 - `POST/GET/DELETE /api/student` — 管理學生帳號（需老師密碼）
 - `POST /api/grammar-check` — 老師點評文法修正（Claude Haiku，回傳 `{ corrected, hasChanges }`）
 - `POST /api/grade` — AI 寫作水平評級（英國 National Curriculum 標準，不封頂）
+- `POST /api/update-profile` — 學生 Profile 更新（Claude Haiku 分析 annotations → 更新 `studentProfiles/{studentId}`，輸入 `{ studentId, annotations, sessionTopic }`）
 
 ## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context，2026-02-28 分組顯示）
 
 ### VCOP 教學方法論知識庫
 - 檔案：`/api/vcop-knowledge.js`，匯出 `VCOP_KNOWLEDGE`（回饋用）和 `VCOP_GRADING_KNOWLEDGE`（評分用）
 - 基於 **Big Writing & VCOP methodology** 和 **Oxford Writing Criterion Scale**
+- 核心規則：**Socratic Rule** — AI 嚴禁改寫學生原文，只能問引導性問題、給具體例子，認知負擔留給學生
 - 內容包含：
-  - **Vocabulary**：WOW words 替換表（old→ancient, said→whispered 等）、sensory language、figurative language
-  - **Connectives** Level 1-4 進階表：and → but/so/because → Before/After/If → although/however/despite/nevertheless
-  - **Openers** Level 1-4 進階表：The/My/I → First/Next/Then → Also/Soon/Because → -ly/-ing/Meanwhile + 六種 opener 類型
-  - **Punctuation 金字塔**：Standard 1-2（. A）→ Standard 3-4（" " , ! ?）→ Standard 5+（; : ( ) — ...）
-  - **Oxford Writing Criterion Scale** Standard 1-7：完整判斷標準
-  - **Up-levelling 回饋邏輯**：Vocabulary Swap → Opener Shift → Two Comma Trick → Connective Extension
+  - **GHaSP 基本功**：Grammar, Handwriting, Spelling, Punctuation + Posh Talk 範例
+  - **Vocabulary**：WOW Word Progression Table（10 組常見詞 × 3 級替換：Level 1-2 Basic → Level 3-4 WOW → Level 5+ Sophisticated），sensory language、figurative language、show not tell
+  - **Connectives** 5 級進階表：Level 1 (and/but/so) → Level 2 (because/when/if) → Level 3 (while/until/besides) → Level 4 (although/however/nevertheless) → Level 5+ (despite/consequently/owing to)
+  - **Openers — ISPACED 框架**（7 種 opener 類型）：I=-Ing, S=Simile, P=Preposition, A=Adverb, C=Connective, E=-Ed, D=Dialogue + 5 級 Opener Progression
+  - **Punctuation Pyramid** 三層：Level 1 Base (. A) → Level 2 Middle (, ! ? ' " ") → Level 3+ Peak (; : () — ...)
+  - **Up-levelling Protocol** 5 種技巧：Vocabulary Swap → Opener Shift (ISPACED) → Two Comma Trick → Connective Extension → Punctuation Upgrade，每種含學生原句改寫範例
+  - **Exemplar Progression**：同一題目（my dog）在 Standard 1/3/5/7 的範文對比
+  - **My Target Record 回饋框架**：2-3 specific strengths（引用原文 + VCOP 術語解釋）+ 1-2 precise targets（正面可行動的小步驟）
+  - **Oxford Writing Criterion Scale** Standard 1-7：每個 Standard 含 6 strand 詳細評估標準 + Year Level Mapping
 - 注入到 `analyze.js` 的 system prompt 和 `grade.js` 的 grading prompt
 
 ### 語言標準：British English
@@ -103,17 +120,23 @@ feedback/{feedbackId}
 - 禁止瀏覽器自帶的紅色波浪線拼字檢查，避免與 AI 回饋混淆
 - 涵蓋：學生寫作框、修改編輯器、回饋留言、老師評語、廣播訊息、登入表單、Session 設定
 
-### 過去寫作 Context（個人化回饋）
+### Student Profile 系統（個人化回饋，取代過去寫作 Context）
+- **取代舊的 `buildPastContext()` 方式**：不再查詢 last 5 submissions，改用結構化 `studentProfiles` document
 - **只在 v1（首次提交）時啟用** — 修改版已有 previousText/previousAnnotations
-- 從 Firestore 查詢該學生最近 5 次 submissions（排除當前），取每篇 `iterations[0]`（第一版原始寫作）
-- 每篇截斷前 300 字，提取 praise + suggestion annotations（各最多 3 條）
-- 注入 system prompt，讓 AI 引用過去好例子給回饋，如：「You used a great -ly opener before: 'Nervously, she opened the letter.' Try one here too!」
-- **正面框架**：只用鼓勵語氣引用過去，禁止負面比較（"you've gotten worse"）
+- 從 Firestore 讀取 `studentProfiles/{studentId}`，單一 document read（~200 words vs 舊方式 ~1500 chars）
+- 注入 system prompt 的 `STUDENT PROFILE` section，包含 VCOP levels、strengths/weaknesses、recentWowWords、ispacedNeverUsed、teacherNotes（last 3）、growthNotes
+- **Profile 更新流程**：學生每次提交後，前端 fire-and-forget 呼叫 `POST /api/update-profile`，Claude Haiku 分析 annotations 更新 profile
+- **teacherNotes 同步**：老師在 Dashboard 存評語時，同時 `arrayUnion` 到 `studentProfiles/{studentId}.teacherNotes`
+- **正面框架**：AI 引用 profile 資料時只用鼓勵語氣（如 "You used 'trembling' last time — try another sensory word!"），禁止負面比較
 - **只影響 suggestion/praise**，不影響 spelling/grammar 判斷
 - **查詢失敗不阻斷**：try/catch 包裹，失敗時繼續正常回饋
-- **Token 預算**：5 篇 × 300 字 ≈ 1500 字 context，`max_tokens` 從 1024 提升到 1536
-- **Firestore composite index**：`submissions` 上需要 `studentId` + `createdAt desc` index，首次查詢 console 會給建立連結
-- 相關函數：`buildPastContext()`（格式化過去寫作）、`buildSystemPrompt()` 第 10 個參數 `pastWritingContext`
+- 相關函數：`buildProfileContext()`（格式化 profile JSON）、`buildSystemPrompt()` 第 10 個參數 `studentProfile`
+
+### Class Overview Tab（老師 Dashboard）
+- 第三個 tab「Class Overview」，讀取 `studentProfiles` collection（一次性 `getDocs`，非即時）
+- **Class VCOP Level Averages**：4 個水平條，顯示 V/C/O/P 全班平均 level（1-5），VCOP 配色
+- **Common Weaknesses**：聚合所有學生的 weaknesses、ispacedNeverUsed、punctuation.notYet，按頻率排序前 5
+- **Student VCOP Heatmap**：表格 rows=學生 cols=V/C/O/P，每格顯示 level 數字 + 顏色（1=紅 2=橘 3=黃 4=綠 5=深綠），按學號排序
 
 ### 第一版回饋（v1）
 - **一次列出所有建議**，不分批
@@ -128,30 +151,46 @@ feedback/{feedbackId}
   - `grammar`：字本身拼對了但用法錯（keep→keeps, i→I, london→London, goed→went, 句首沒大寫）
   - `american_spelling`：美式拼法，不是錯誤，只是提示英式寫法（color→colour, favorite→favourite）
 - **Capital letter 檢查**（歸類為 `grammar`）：句首大寫、I/I'm/I'll/I've 大寫、專有名詞大寫、星期/月份大寫
-- **Openers 維度特殊邏輯**（當 O 維度開啟時）：
-  - 六種 Opener 類型：
-    1. Adverb opener (-ly words)：Silently, Nervously, Suddenly
-    2. -ing opener (action words)：Running through the forest, Gazing at the stars
-    3. Question opener：Have you ever wondered...? What would you do if...?
-    4. Prepositional phrase opener (where/when)：Under the bridge, At midnight, During the storm
-    5. -ed opener (past participle)：Exhausted from the journey, Convinced she was right
-    6. Short punchy statement：It was over. She knew. Nothing moved.
+- **Openers 維度特殊邏輯**（當 O 維度開啟時，使用 ISPACED 框架）：
+  - 七種 Opener 類型（ISPACED）：
+    1. **I** = -Ing opener：Running towards the sea, Trembling with fear
+    2. **S** = Simile opener：Like a bottle-nose dolphin, As quiet as a mouse
+    3. **P** = Preposition opener (where/when)：Underneath the water, At midnight, Across the road
+    4. **A** = Adverb opener (-ly words)：Silently, she waited, Carefully, he crept
+    5. **C** = Connective opener：Despite it being warm, Although the rain had stopped
+    6. **E** = -Ed opener (past participle)：Exhausted from the journey, Convinced she was right
+    7. **D** = Dialogue opener：'Wake up!' cried mum, 'Run!' he screamed
   - **Praise（✅）**：學生用了某種 opener → 標記為 praise 並指出類型名稱
   - **Suggestion（💡）**：如果學生句子開頭重複（全部 I/The 開頭）→ 具體建議用哪種 opener，給出用學生原句改寫的例子
   - 統計學生用了幾種不同的 opener 類型，少於 3 種就建議嘗試新類型
   - **逗號規則**：-ly、-ing、prepositional、-ed opener 後面要加逗號，漏加的歸類為 `grammar` annotation
-- **VCOP 維度強制覆蓋**：每個開啟的維度必須同時有 praise（✅ 做得好）AND suggestion（💡 建議），兩者缺一不可。Prompt 裡有 pre-output checklist 強制 AI 檢查每個維度的 praise/suggestion 覆蓋
+- **VCOP 維度強制覆蓋**：
+  - **Prompt 層**：「⚠️ MANDATORY — NON-NEGOTIABLE DIMENSION COVERAGE ⚠️」+ pre-output checklist，缺少任何維度的回饋會被 REJECTED
+  - **回饋品質規則**：每條回饋必須包含三部分：(a) 引用學生具體文字 (b) 指出具體技巧名稱 (c) 解釋為什麼好或怎麼改。空泛回饋（如「Keep practising!」「Good job!」）會被 REJECTED
+  - **Per-dimension 分析檢查清單**：AI 必須在寫 annotation 前逐項檢查：
+    - **P**: 句號大寫一致性 → run-on sentences → 逗號用法 → 問號感嘆號 → 高級標點
+    - **V**: dead words 掃描 → 重複詞 → WOW words → sensory language
+    - **C**: 連接詞種類和 level → and 鏈 → 最高級連接詞 → 缺少的 level
+    - **O**: 每句開頭詞列表 → 連續相同 opener → ISPACED 類型計數 → 逗號規則
+  - **前端只 log 不補**：`logDimensionCoverage()` 在 console.error 記錄缺失維度，不注入 fallback 訊息
 - **伺服器端驗證**：AI 回傳的 annotations 會被過濾 — phrase 必須在原文中找到精確匹配，否則丟棄；spelling/grammar 的 suggestion 不能和 phrase 相同
 
-### 回饋顯示架構（分組顯示 + 信心優先）
+### 回饋顯示架構（分組顯示 + 信心優先 + 互動跳轉）
 - **分兩層顯示**：
   1. **Inline 文字**：學生原文 + 彩色標記（只有顏色，沒有 note box 打斷文字流）
   2. **分組卡片**（在原文下方）：按類型分組，順序為：
      - 🟢 **What you did well**（praise）：V → C → O → P 順序，綠色背景 `#f0fdf4`
      - 💡 **What to try next**（suggestion）：V → C → O → P 順序，淺灰背景 `#f8fafc`
      - ✏️ **Spelling & Grammar**（spelling + grammar + american_spelling）：放最後
-     - ✅ **You fixed these!**（revision_good）：修改版時顯示在最前
+     - ✅ **You improved these!**（revision_good）：修改版時顯示在最前，含 AI 讚美訊息
+     - 🔄 **Good try — almost there!**（revision_attempted）：學生嘗試但未明顯進步，含 AI 鼓勵 + 指引
 - **設計原則**：學生先看到全部讚美建立信心，再看全部建議專注改進，最後看拼寫文法
+- **Click-to-jump 互動**：
+  - 每個 inline 標記和對應的下方卡片都有唯一 ID（`inline-ann-{type}-{i}` / `card-ann-{type}-{i}`）
+  - 點擊 inline 彩色標記 → 滾動到對應 feedback 卡片 + 黃色閃爍高亮（`@keyframes annFlash` 1.5s）
+  - 每個 feedback 卡片有「↑」按鈕 → 滾動回原文中的 inline 標記
+  - `scrollToAndFlash(targetId)` 函數：`scrollIntoView({ behavior: "smooth", block: "center" })` + 添加 `ann-flash` class
+  - `.ann-clickable` class 加上 cursor pointer + hover 淺藍背景
 - **Inline 顏色**：
   - 做得好 praise：綠色字 `#16A34A`
   - 拼寫錯誤 spelling：紅色字 `#DC2626` + 底線
@@ -184,11 +223,16 @@ feedback/{feedbackId}
   - ✅ Green text ✅ = You fixed this!（僅修改版顯示）
   - 📚V 🔗C ✨O 🎯P 維度說明
 
-### 修改版回饋（v2+）
-- **不找新問題**，只比對上一版的原始回饋（spelling、grammar、suggestion 三種）
-- 改對的 → `revision_good`（綠色 ✅）
-- 沒改的 → 保持原始 annotation 樣式（spelling 紅色、grammar 橘色、suggestion 灰框）
-- 傳入 `previousAnnotations` 讓 AI 精確比對
+### 修改版回饋（v2+）— 三狀態評估
+- **不找新問題**，只比對 v1 的原始回饋（spelling、grammar、suggestion 三種）
+- 傳入三項資訊：v1 原文、v1 AI 回饋、學生新版本
+- AI 對每個原始問題判斷三種狀態：
+  - ✅ `revision_good`（綠色）：學生改了且有進步。**不要求完全匹配 AI 建議**，只要比原來好就算。AI 回饋讚美學生的改法，可選擇性建議更好的用詞。
+  - 🔄 `revision_attempted`（琥珀色）：學生嘗試改了但沒有明顯進步（如拼錯新字、替換詞不合語境）。AI 先肯定努力，再解釋問題並給指引。
+  - ⬜ 未改（保持原始 annotation）：原始問題文字仍在，保持 spelling/grammar/suggestion 原始類型。
+- `revision_good` 和 `revision_attempted` 都包含 `originalPhrase`（v1 中被標記的原文）和 `suggestion`（AI 的評語）
+- **核心原則**：先肯定學生的努力和改動，再看是否可以更好。永遠不忽略學生的嘗試。
+- 傳入 `previousAnnotations` = `iterations[0].annotations`（永遠與 v1 比對）
 
 ### Feedback Level Slider（難度級別，非數量）
 - Slider 在提交按鈕上方（提交前顯示，提交後隱藏），標籤「Feedback level」
@@ -240,6 +284,9 @@ feedback/{feedbackId}
   - **分子永遠 ≤ 分母**：`Math.min(fixedCount, totalIssues)`
   - 不累加多版：只看最新版的 `revision_good` 對照 v1 issues
   - 新版 AI 發現的新問題不計入分母
+  - **修改版永遠與 v1 比對**：`handleSubmitRevision` 傳入 `iterations[0].text` 和 `iterations[0].annotations`（而非上一版），確保 v3+ 仍能正確追蹤進步
+  - **0 改進時的鼓勵訊息**：totalFixed === 0 時標題顯示「Keep going! Try clicking on the suggestions to see what to change.」而非 🎉
+  - **嘗試修改計數**：`totalAttempted` 追蹤 `revision_attempted` 的數量，進度條用琥珀色段顯示，標籤顯示「· X almost there」
 - **里程碑成就**：
   - 3 個改進 → 💪「Nice start!」
   - 5 個改進 → 🔥「On fire!」
@@ -265,15 +312,18 @@ feedback/{feedbackId}
 
 ## 老師 Dashboard 功能
 
-### AI Grading（Oxford Writing Criterion Scale）
+### AI Grading（Oxford Writing Criterion Scale）— 只在老師 Dashboard 顯示
 - API endpoint `POST /api/grade`，使用 Oxford Writing Criterion Scale (Standard 1-7) 評級
 - 根據學號前兩位自動識別學生實際年級（19→Y6, 20→Y5, 21→Y4）
 - 評級不封頂：Standard 1 到 Standard 7，基於學生寫作中一致展現的能力
 - 格式：`"Standard 4 — Develops ideas logically with paragraphs, uses adjectives and speech marks"`
-- 知識庫：`/api/vcop-knowledge.js` 提供 VCOP_GRADING_KNOWLEDGE 評分標準
+- 知識庫：`/api/vcop-knowledge.js` 提供 VCOP_GRADING_KNOWLEDGE，含 6 strand holistic assessment（GHaSP, VCOP, Structure, Writer's Voice）
+- **Per-version grading**：展開 submission 時對所有版本並行 grading（`Promise.all`），存為 `{ versions: [{ version, level, reason }] }`
+- **學生頁面完全不顯示 grading** — 已移除所有 grade API 呼叫和 grading UI
 - Dashboard 顯示：
-  - 提交列表 header：`[Y5]`（實際年級灰色）+ `[Y6]`（AI 評級藍色）
-  - 展開詳情：完整 grading 面板，含差距指示（`+1 above` 綠色 / `2 below` 紅色）
+  - 提交列表 header：`[Y5]`（實際年級灰色）+ `[Y6]`（AI 評級藍色，取最新版）
+  - 版本間若有進步顯示 `.grade-improved`（綠色）或 `.grade-declined`（紅色）
+  - 展開詳情：grading progression 顯示 `v1: Y4 → v2: Y5 → v3: Y5`
   - 展開時自動觸發 grading API
 
 ### 原文檢視 + 複製
@@ -288,8 +338,8 @@ feedback/{feedbackId}
 | `american_spelling` | 美式拼法提示（非錯誤） | color→colour, favorite→favourite | 紫色字 `#7C3AED` + 虛線底線，下方 🟣 提示 |
 | `suggestion` | VCOP 改進建議 | | 原文黑色，下方灰色圓角框 💡 建議 + VCOP pill |
 | `praise` | 做得好的地方 | | 綠色字 + VCOP pill badge |
-| `revision_good` | 修改後改對了 | | 綠色字 + ✅ |
-| `revision_retry` | 修改後仍有問題 | | 保持原始標記樣式（spelling/grammar/suggestion）|
+| `revision_good` | 修改後有進步（不要求完全匹配 AI 建議） | | 綠色字 + ✅ + AI 讚美訊息 |
+| `revision_attempted` | 嘗試修改但未明顯進步 | | 琥珀色字 + 🔄 + AI 鼓勵 + 指引 |
 
 ## 環境變數
 ### 前端（.env.local，VITE_ prefix）
@@ -317,9 +367,11 @@ feedback/{feedbackId}
 ```
 src/
   ├── components/
-  │     ├── AnnotatedText.jsx — 回饋顯示核心（inline diff + VCOP 標籤 + revision 狀態）
+  │     ├── AnnotatedText.jsx — 回饋顯示核心（inline diff + VCOP 標籤 + revision 狀態 + click-to-jump）
   │     │     ├── renderInlineDiff() — 最小差異字元比對
   │     │     ├── cleanSuggestion() — 向後兼容 "wrong → right" 格式
+  │     │     ├── scrollToAndFlash() — 點擊互動跳轉 + 黃色閃爍動畫
+  │     │     ├── BackToTextBtn — 「↑」按鈕滾回原文標記
   │     │     ├── FeedbackLegend — 圖例組件
   │     │     └── VcopFilterBar — VCOP 維度 toggle 按鈕列
   │     ├── HighlightedEditor.jsx — 高亮編輯器（backdrop overlay + 精確匹配自動消失）
@@ -339,7 +391,8 @@ src/
 
 api/
   ├── _firebase.js — Firebase Admin SDK 初始化
-  ├── analyze.js — AI 寫作分析（VCOP methodology + 年級差異化 + 修改比對）
+  ├── analyze.js — AI 寫作分析（VCOP methodology + 年級差異化 + 修改比對 + Student Profile 注入）
+  ├── update-profile.js — Student Profile 更新（Claude Haiku 分析 annotations → 更新 studentProfiles）
   ├── vcop-knowledge.js — Big Writing & VCOP 教學方法論知識庫（VCOP_KNOWLEDGE + VCOP_GRADING_KNOWLEDGE）
   ├── auth.js — 登入驗證
   ├── grade.js — AI 寫作水平評級（Oxford Writing Criterion Scale, Standard 1-7）
@@ -372,10 +425,18 @@ api/
 ## 踩過的坑
 - **Vercel 環境變數要重新部署才生效**：在 dashboard 加完 env var 後必須再跑一次 `vercel --prod`，舊的 deployment 不會自動拿到新變數
 - **Firestore composite index**：Dashboard 的 `onSnapshot` 查詢需要 `submissions` collection 上的 composite index（`sessionId` asc + `createdAt` desc）。首次執行時 console 會報錯並給出建立連結，點擊即可建立。
-- **Claude 回傳 JSON 會包 markdown code fence**：即使 prompt 要求「只回 JSON」，Claude 仍可能回 ` ```json ... ``` `。`api/analyze.js` 裡用 regex strip 掉 code fence 再 `JSON.parse`
+- **Claude 回傳 JSON 會包 markdown code fence 或尾部文字**：即使 prompt 要求「只回 JSON」，Claude 仍可能回 ` ```json ... ``` ` 或在 JSON `}` 後面附加評論文字（特別是 Level 3/Amount 3 長回應時）。`api/analyze.js` 裡先 regex strip code fence，再用 brace-depth 追蹤器提取第一個完整 `{...}` JSON 物件，忽略尾部任何附加文字
+- **Feedback level/amount slider 沒有實際增加回饋數量**：Prompt 規則文字有根據 level/amount 改變（如 "2-3 per dimension"），但 AI 遵循的是 prompt 最後的 JSON 範例模板和 pre-output checklist，這兩處硬寫了「at least 1」且範例只展示每維度各一條。修正：JSON 範例模板和 pre-output checklist 改為動態生成，根據 effectiveAmount 展示對應數量的範例行；effectiveAmount >= 2 時加入紅色警告「giving only 1 per dimension is NOT ENOUGH」
 - **AI spelling suggestion 格式**：prompt 要求只返回修正後文字（如 `"keeps"`），但 AI 偶爾仍返回 `"keep → keeps"` 格式。`AnnotatedText.jsx` 的 `cleanSuggestion()` 函數會自動提取 `→` 後面的部分，確保向後兼容。
 - **Spelling 和 Grammar 必須拆開**：早期版本兩者共用 `type: "spelling"`，導致兩個 toggle 控制同一批 annotations，學生無法分別查看。2026-02-28 拆為獨立的 `type: "spelling"` 和 `type: "grammar"`，各自最多 3 個，前端各自獨立過濾。
 - **進步面板分子>分母 bug**：早期版本累加所有修改版的 `revision_good` 數量作為分子，但同一個 v1 issue 在 v2、v3 都會被標為 `revision_good`，導致重複計算。修正：只看最新版的 `revision_good`，用 v1 issue index 去重，分子 cap 在分母以下。
 - **高亮編輯器用 case-sensitive 匹配**：case-insensitive 匹配會導致學生改了大小寫（如 `i`→`I`）後高亮不消失。改用 exact match `text.indexOf(a.phrase)` 解決。
 - **Feedback level slider 沒有實際效果**：原本 prompt 只有一句「match the TARGET year standard」太模糊，AI 行為幾乎不變。修正：每個 level 加入具體建議範例（Level 1: 簡單詞彙替換；Level 3: tricolon、antithesis、semicolon），並在 prompt 末尾重複當前 level 的期望。
-- **VCOP 維度只有 praise 沒有 suggestion（或反之）**：原本規則只要求「at least one annotation (either suggestion or praise)」，AI 常常只給其中一種。修正：明確要求 BOTH praise AND suggestion，加上 pre-output checklist 讓 AI 自我檢查每個維度的覆蓋。
+- **VCOP 維度只有 praise 沒有 suggestion（或反之）**：原本規則只要求「at least one annotation (either suggestion or praise)」，AI 常常只給其中一種。修正：明確要求 BOTH praise AND suggestion，加上 pre-output checklist 讓 AI 自我檢查每個維度的覆蓋。第二次修正：prompt 改用最強制語言（NON-NEGOTIABLE + REJECTED）仍不夠，加上前端 `ensureDimensionCoverage()` fallback 自動注入預設 annotation。
+- **進步追蹤 v4/v5 顯示 0 improvements**：`handleSubmitRevision` 原本傳 `prevIteration.annotations`（上一版），但 v3+ 的上一版 annotations 已是 `revision_good` 類型，AI 無法與原始 spelling/grammar/suggestion 比對。修正：永遠傳 `iterations[0].text` 和 `iterations[0].annotations`（第一版）。
+- **版面偏左**：`margin: 0 auto` 不夠，需要 `margin-left: auto; margin-right: auto` + `#root { width: 100% }` + `body { min-height: 100vh }`。
+
+## Debug 日誌
+- **前端** `console.log`：`[SUBMIT] feedbackLevel=X, feedbackAmount=Y` + `[SUBMIT] Got N annotations`
+- **API** `console.log`：`[ANALYZE] studentId, feedbackLevel, feedbackAmount, iteration, promptLength` + `[ANALYZE] Raw annotations: N, breakdown: {...}` + `stop_reason, output_tokens`
+- **前端** `console.error`：`[VCOP COVERAGE GAP] Missing PRAISE/SUGGESTION for dimension X` — 當 AI 未覆蓋某維度時記錄

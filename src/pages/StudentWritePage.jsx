@@ -99,27 +99,31 @@ export default function StudentWritePage() {
     const v1Issues = v1Annotations.filter((a) => a.type === "spelling" || a.type === "grammar" || a.type === "suggestion");
     const totalIssues = v1Issues.length;
 
-    // Use the LATEST revision to count which v1 issues are now fixed.
-    // Only count unique v1 issues that have a matching revision_good in the latest version.
+    // Use the LATEST revision to count which v1 issues are now fixed or attempted.
     const latestAnns = iterations[iterations.length - 1].annotations || [];
     const latestGood = latestAnns.filter((a) => a.type === "revision_good");
+    const latestAttempted = latestAnns.filter((a) => a.type === "revision_attempted");
 
     // Track which v1 issues have been fixed (by index, to avoid double-counting)
     const fixedV1Indices = new Set();
+    const attemptedV1Indices = new Set();
     const fixedByDim = {};
     let spellingFixes = 0;
     let grammarFixes = 0;
 
-    for (const good of latestGood) {
-      // Find the matching v1 issue
-      const idx = v1Issues.findIndex((o, i) => {
-        if (fixedV1Indices.has(i)) return false; // already matched
+    const matchV1Issue = (ann, excludeSet) => {
+      return v1Issues.findIndex((o, i) => {
+        if (excludeSet.has(i)) return false;
         return (
-          o.phrase.toLowerCase() === (good.originalPhrase || "").toLowerCase() ||
-          o.phrase.toLowerCase() === good.phrase.toLowerCase() ||
-          (o.suggestion && o.suggestion.toLowerCase().includes(good.phrase.toLowerCase()))
+          o.phrase.toLowerCase() === (ann.originalPhrase || "").toLowerCase() ||
+          o.phrase.toLowerCase() === ann.phrase.toLowerCase() ||
+          (o.suggestion && o.suggestion.toLowerCase().includes(ann.phrase.toLowerCase()))
         );
       });
+    };
+
+    for (const good of latestGood) {
+      const idx = matchV1Issue(good, fixedV1Indices);
       if (idx !== -1) {
         fixedV1Indices.add(idx);
         const original = v1Issues[idx];
@@ -133,7 +137,13 @@ export default function StudentWritePage() {
       }
     }
 
+    for (const att of latestAttempted) {
+      const idx = matchV1Issue(att, new Set([...fixedV1Indices, ...attemptedV1Indices]));
+      if (idx !== -1) attemptedV1Indices.add(idx);
+    }
+
     const totalFixed = Math.min(fixedV1Indices.size, totalIssues);
+    const totalAttempted = Math.min(attemptedV1Indices.size, totalIssues - totalFixed);
 
     // This round: compare latest vs previous iteration
     const prevAnns = iterations.length >= 3 ? iterations[iterations.length - 2].annotations || [] : v1Annotations;
@@ -155,6 +165,7 @@ export default function StudentWritePage() {
 
     return {
       totalFixed,
+      totalAttempted,
       totalIssues,
       thisRoundFixed,
       breakdown,
@@ -252,6 +263,24 @@ export default function StudentWritePage() {
 
   const handleLogout = () => { logout(); navigate("/"); };
 
+  // Log missing VCOP dimensions (no fallback — prompt should handle it)
+  const logDimensionCoverage = (annotations) => {
+    const vcopDims = (session?.vcopFocus || ["V", "C", "O", "P"]).filter(d => ["V", "C", "O", "P"].includes(d));
+    const dimLabels = { V: "Vocabulary", C: "Connectives", O: "Openers", P: "Punctuation" };
+
+    for (const dim of vcopDims) {
+      const hasPraise = annotations.some(a => a.type === "praise" && a.dimension === dim);
+      const hasSuggestion = annotations.some(a => a.type === "suggestion" && a.dimension === dim);
+
+      if (!hasPraise) {
+        console.error(`[VCOP COVERAGE GAP] Missing PRAISE for dimension ${dim} (${dimLabels[dim]}). AI failed to provide praise for this dimension.`);
+      }
+      if (!hasSuggestion) {
+        console.error(`[VCOP COVERAGE GAP] Missing SUGGESTION for dimension ${dim} (${dimLabels[dim]}). AI failed to provide suggestion for this dimension.`);
+      }
+    }
+  };
+
   const handleSubmit = async () => {
     if (!text.trim() || !session) return;
     setLoading(true);
@@ -270,14 +299,28 @@ export default function StudentWritePage() {
           extraInstructions: session.extraInstructions, feedbackLevel, feedbackAmount,
         }),
       });
+      console.log(`[SUBMIT] feedbackLevel=${feedbackLevel}, feedbackAmount=${feedbackAmount}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Something went wrong");
       }
       const data = await res.json();
+      console.log(`[SUBMIT] Got ${data.annotations?.length} annotations`);
       setSubmissionId(data.submissionId);
+      logDimensionCoverage(data.annotations);
       setIterations([{ version: 1, text: text.trim(), annotations: data.annotations, changedWords: null }]);
       setSelectedVersion(0);
+
+      // Fire-and-forget profile update
+      fetch("/api/update-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: user.studentId,
+          annotations: data.annotations,
+          sessionTopic: session.topic || "",
+        }),
+      }).catch((err) => console.warn("[PROFILE UPDATE] Failed:", err.message));
     } catch (err) {
       setError(err.message || "Could not analyse your writing. Please try again!");
     } finally { setLoading(false); }
@@ -306,7 +349,7 @@ export default function StudentWritePage() {
           vcopFocus: session.vcopFocus, topic: session.topic,
           extraInstructions: session.extraInstructions, feedbackLevel, feedbackAmount,
           submissionId, iterationNumber: newVersion,
-          previousText: prevIteration.text, previousAnnotations: prevIteration.annotations,
+          previousText: iterations[0].text, previousAnnotations: iterations[0].annotations,
         }),
       });
       if (!res.ok) {
@@ -318,6 +361,17 @@ export default function StudentWritePage() {
       setIterations((prev) => [...prev, newIteration]);
       setSelectedVersion(iterations.length);
       setIsRevising(false);
+
+      // Fire-and-forget profile update
+      fetch("/api/update-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: user.studentId,
+          annotations: data.annotations,
+          sessionTopic: session.topic || "",
+        }),
+      }).catch((err) => console.warn("[PROFILE UPDATE] Failed:", err.message));
     } catch (err) {
       setError(err.message || "Could not analyse your revision. Please try again!");
     } finally { setLoading(false); }
@@ -442,7 +496,9 @@ export default function StudentWritePage() {
                 )}
 
                 <h2 className="progress-summary-title">
-                  Version {progressStats.version} — You've made {progressStats.totalFixed} improvement{progressStats.totalFixed !== 1 ? "s" : ""} so far! 🎉
+                  {progressStats.totalFixed > 0
+                    ? `Version ${progressStats.version} — You've made ${progressStats.totalFixed} improvement${progressStats.totalFixed !== 1 ? "s" : ""} so far! 🎉`
+                    : `Version ${progressStats.version} — Keep going! Try clicking on the suggestions to see what to change.`}
                 </h2>
 
                 {progressStats.thisRoundFixed > 0 && (
@@ -454,13 +510,23 @@ export default function StudentWritePage() {
                 {progressStats.totalIssues > 0 && (
                   <div className="improvement-progress">
                     <div className="improvement-progress-label">
-                      {progressStats.totalFixed} / {progressStats.totalIssues} suggestions addressed
+                      {progressStats.totalFixed} / {progressStats.totalIssues} improved
+                      {progressStats.totalAttempted > 0 && ` · ${progressStats.totalAttempted} almost there`}
                     </div>
                     <div className="improvement-progress-track">
                       <div
                         className="improvement-progress-fill"
                         style={{ width: `${Math.min(100, Math.round((progressStats.totalFixed / progressStats.totalIssues) * 100))}%` }}
                       />
+                      {progressStats.totalAttempted > 0 && (
+                        <div
+                          className="improvement-progress-attempted"
+                          style={{
+                            width: `${Math.min(100 - Math.round((progressStats.totalFixed / progressStats.totalIssues) * 100), Math.round((progressStats.totalAttempted / progressStats.totalIssues) * 100))}%`,
+                            left: `${Math.round((progressStats.totalFixed / progressStats.totalIssues) * 100)}%`,
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
@@ -473,6 +539,7 @@ export default function StudentWritePage() {
                     ))}
                   </div>
                 )}
+
               </div>
             )}
 

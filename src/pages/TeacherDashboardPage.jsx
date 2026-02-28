@@ -11,6 +11,7 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  arrayUnion,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -66,6 +67,10 @@ export default function TeacherDashboardPage() {
   // Raw text toggle per submission
   const [showRawText, setShowRawText] = useState({});
   const [copiedId, setCopiedId] = useState(null);
+
+  // Class Overview
+  const [studentProfiles, setStudentProfiles] = useState([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
 
   // Fetch all sessions, default to active
   useEffect(() => {
@@ -165,31 +170,71 @@ export default function TeacherDashboardPage() {
     return unsub;
   }, [session]);
 
+  // Fetch student profiles when Class Overview tab is selected
+  useEffect(() => {
+    if (dashboardTab !== "overview") return;
+    setProfilesLoading(true);
+    getDocs(collection(db, "studentProfiles"))
+      .then((snap) => {
+        setStudentProfiles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      })
+      .catch((err) => console.error("Student profiles fetch error:", err))
+      .finally(() => setProfilesLoading(false));
+  }, [dashboardTab]);
+
   const submittedStudentIds = new Set(submissions.map((s) => s.studentId));
   const submittedCount = submittedStudentIds.size;
   const totalStudents = students.length;
 
-  // Fetch grade for a submission
+  // Fetch grade for ALL versions of a submission
   const handleFetchGrade = async (sub) => {
     const subId = sub.id;
     if (grades[subId]) return; // Already graded
     setGradingId(subId);
 
-    const text = sub.iterations?.[0]?.text || sub.text || "";
-    if (!text.trim()) {
+    const iters = sub.iterations || [];
+    if (iters.length === 0) {
+      // Old format fallback
+      const text = sub.text || "";
+      if (!text.trim()) { setGradingId(null); return; }
+      try {
+        const res = await fetch("/api/grade", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, studentId: sub.studentId }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGrades((prev) => ({ ...prev, [subId]: { versions: [{ version: 1, ...data }] } }));
+        }
+      } catch (err) { console.error("Grading error:", err); }
       setGradingId(null);
       return;
     }
 
+    // Grade each version in parallel
     try {
-      const res = await fetch("/api/grade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, studentId: sub.studentId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGrades((prev) => ({ ...prev, [subId]: data }));
+      const results = await Promise.all(
+        iters.map(async (iter) => {
+          const text = iter.text || "";
+          if (!text.trim()) return null;
+          try {
+            const res = await fetch("/api/grade", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text, studentId: sub.studentId }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              return { version: iter.version, ...data };
+            }
+          } catch (err) { console.error("Grading error for v" + iter.version, err); }
+          return null;
+        })
+      );
+      const versionGrades = results.filter(Boolean);
+      if (versionGrades.length > 0) {
+        setGrades((prev) => ({ ...prev, [subId]: { versions: versionGrades } }));
       }
     } catch (err) {
       console.error("Grading error:", err);
@@ -240,6 +285,18 @@ export default function TeacherDashboardPage() {
         teacherComment: finalComment,
         teacherCommentOriginal: comment,
       });
+
+      // Sync teacher comment to student profile's teacherNotes
+      const sub = submissions.find((s) => s.id === submissionId);
+      if (sub?.studentId) {
+        updateDoc(doc(db, "studentProfiles", sub.studentId), {
+          teacherNotes: arrayUnion({
+            date: new Date().toISOString(),
+            comment: finalComment,
+            sessionTopic: sub.sessionTopic || "",
+          }),
+        }).catch((err) => console.warn("Failed to sync teacherNote to profile:", err.message));
+      }
 
       if (hasChanges) {
         setGrammarNote({ submissionId, original: comment, corrected: finalComment });
@@ -403,6 +460,12 @@ export default function TeacherDashboardPage() {
             onClick={() => setDashboardTab("feedback")}
           >
             Feedback
+          </button>
+          <button
+            className={`teacher-nav-btn ${dashboardTab === "overview" ? "active" : ""}`}
+            onClick={() => setDashboardTab("overview")}
+          >
+            Class Overview
           </button>
         </nav>
 
@@ -642,11 +705,27 @@ export default function TeacherDashboardPage() {
                           {actualYear && (
                             <span className="year-badge">{actualYear}</span>
                           )}
-                          {/* AI grade badge (compact, in header) */}
-                          {grade && (
-                            <span className={`grade-badge ${grade.level === actualYear ? "grade-at-level" : ""}`}>
-                              {grade.level}
-                            </span>
+                          {/* AI grade badge (compact, in header — show first and last version) */}
+                          {grade?.versions && grade.versions.length > 0 && (
+                            <>
+                              <span className="grade-badge">
+                                {grade.versions[0].level}
+                              </span>
+                              {grade.versions.length > 1 && (
+                                <>
+                                  <span className="grade-arrow-header">→</span>
+                                  <span className={`grade-badge ${
+                                    (() => {
+                                      const first = parseInt(grade.versions[0].level.replace(/[^0-9]/g, "")) || 0;
+                                      const last = parseInt(grade.versions[grade.versions.length - 1].level.replace(/[^0-9]/g, "")) || 0;
+                                      return last > first ? "grade-improved" : last < first ? "grade-declined" : "";
+                                    })()
+                                  }`}>
+                                    {grade.versions[grade.versions.length - 1].level}
+                                  </span>
+                                </>
+                              )}
+                            </>
                           )}
                           <span className="submission-preview">{preview}</span>
                           {iterationCount > 1 && (
@@ -667,23 +746,32 @@ export default function TeacherDashboardPage() {
                               {isGrading ? (
                                 <div className="grading-loading">
                                   <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                                  <span>Grading...</span>
+                                  <span>Grading all versions...</span>
                                 </div>
-                              ) : grade ? (
+                              ) : grade?.versions ? (
                                 <div className="grading-result">
                                   <div className="grading-badges">
                                     <span className="grading-actual-year">Actual: {actualYear || "?"}</span>
-                                    <span className="grading-ai-level">Writing at: {grade.level} level</span>
-                                    {actualYear && grade.level !== actualYear && (
+                                    {grade.versions.map((vg, i) => (
+                                      <span key={vg.version}>
+                                        {i > 0 && <span className="grading-arrow">→</span>}
+                                        <span className={`grading-ai-level ${i === grade.versions.length - 1 ? "grading-ai-latest" : ""}`}>
+                                          v{vg.version}: {vg.level}
+                                        </span>
+                                      </span>
+                                    ))}
+                                    {actualYear && grade.versions.length > 0 && (
                                       <span className={`grading-gap ${
                                         (() => {
-                                          const levelNum = parseInt(grade.level.replace(/[^0-9]/g, "")) || 0;
+                                          const lastGrade = grade.versions[grade.versions.length - 1];
+                                          const levelNum = parseInt(lastGrade.level.replace(/[^0-9]/g, "")) || 0;
                                           const actualNum = parseInt(actualYear.replace(/[^0-9]/g, "")) || 0;
-                                          return levelNum > actualNum ? "grading-above" : "grading-below";
+                                          return levelNum > actualNum ? "grading-above" : levelNum < actualNum ? "grading-below" : "";
                                         })()
                                       }`}>
                                         {(() => {
-                                          const levelNum = parseInt(grade.level.replace(/[^0-9]/g, "")) || 0;
+                                          const lastGrade = grade.versions[grade.versions.length - 1];
+                                          const levelNum = parseInt(lastGrade.level.replace(/[^0-9]/g, "")) || 0;
                                           const actualNum = parseInt(actualYear.replace(/[^0-9]/g, "")) || 0;
                                           if (levelNum > actualNum) return `+${levelNum - actualNum} above`;
                                           if (levelNum < actualNum) return `${actualNum - levelNum} below`;
@@ -692,7 +780,7 @@ export default function TeacherDashboardPage() {
                                       </span>
                                     )}
                                   </div>
-                                  <p className="grading-reason">{grade.reason}</p>
+                                  <p className="grading-reason">{grade.versions[grade.versions.length - 1]?.reason || ""}</p>
                                 </div>
                               ) : (
                                 <button
@@ -946,6 +1034,155 @@ export default function TeacherDashboardPage() {
                         </div>
                       </div>
                     )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {dashboardTab === "overview" && (
+              <div className="class-overview">
+                <h2 className="submissions-title">Class Overview</h2>
+
+                {profilesLoading ? (
+                  <p className="no-submissions-text">Loading profiles...</p>
+                ) : studentProfiles.length === 0 ? (
+                  <p className="no-submissions-text">No student profiles yet. Profiles are created after students submit their first writing.</p>
+                ) : (
+                  <>
+                    {/* VCOP Level Averages */}
+                    <div className="feedback-stats-card">
+                      <h3>Class VCOP Level Averages</h3>
+                      <div className="vcop-averages">
+                        {[
+                          { key: "vocabulary", label: "Vocabulary", color: "#8B5CF6", emoji: "📚" },
+                          { key: "connectives", label: "Connectives", color: "#3B82F6", emoji: "🔗" },
+                          { key: "openers", label: "Openers", color: "#10B981", emoji: "✨" },
+                          { key: "punctuation", label: "Punctuation", color: "#F59E0B", emoji: "🎯" },
+                        ].map(({ key, label, color, emoji }) => {
+                          const levels = studentProfiles
+                            .map((p) => p.vcop?.[key]?.level)
+                            .filter((l) => typeof l === "number");
+                          const avg = levels.length > 0
+                            ? (levels.reduce((a, b) => a + b, 0) / levels.length).toFixed(1)
+                            : "—";
+                          const pct = levels.length > 0
+                            ? Math.round((levels.reduce((a, b) => a + b, 0) / levels.length / 5) * 100)
+                            : 0;
+                          return (
+                            <div key={key} className="vcop-avg-row">
+                              <span className="vcop-avg-label">{emoji} {label}</span>
+                              <div className="vcop-avg-bar-track">
+                                <div
+                                  className="vcop-avg-bar-fill"
+                                  style={{ width: `${pct}%`, backgroundColor: color }}
+                                />
+                              </div>
+                              <span className="vcop-avg-value" style={{ color }}>{avg}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Common Weaknesses */}
+                    <div className="feedback-stats-card">
+                      <h3>Common Weaknesses</h3>
+                      {(() => {
+                        const weaknessCounts = {};
+                        for (const p of studentProfiles) {
+                          const weaknesses = p.vcop?.vocabulary?.weaknesses || [];
+                          for (const w of weaknesses) {
+                            weaknessCounts[w] = (weaknessCounts[w] || 0) + 1;
+                          }
+                          // Check openers never used
+                          const neverUsed = p.vcop?.openers?.ispacedNeverUsed || [];
+                          for (const opener of neverUsed) {
+                            const key = `Never used ${opener} opener`;
+                            weaknessCounts[key] = (weaknessCounts[key] || 0) + 1;
+                          }
+                          // Check punctuation not yet
+                          const notYet = p.vcop?.punctuation?.notYet || [];
+                          for (const item of notYet) {
+                            const key = `Punctuation: ${item} not yet`;
+                            weaknessCounts[key] = (weaknessCounts[key] || 0) + 1;
+                          }
+                        }
+                        const sorted = Object.entries(weaknessCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .slice(0, 5);
+
+                        if (sorted.length === 0) {
+                          return <p className="no-submissions-text">No weakness patterns detected yet.</p>;
+                        }
+
+                        return (
+                          <div className="weakness-list">
+                            {sorted.map(([weakness, count]) => (
+                              <div key={weakness} className="weakness-item">
+                                <span className="weakness-count">{count}/{studentProfiles.length}</span>
+                                <span className="weakness-text">{weakness}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Student VCOP Heatmap */}
+                    <div className="feedback-stats-card">
+                      <h3>Student VCOP Heatmap</h3>
+                      <div className="heatmap-wrapper">
+                        <table className="heatmap-table">
+                          <thead>
+                            <tr>
+                              <th>Student</th>
+                              <th style={{ color: "#8B5CF6" }}>V</th>
+                              <th style={{ color: "#3B82F6" }}>C</th>
+                              <th style={{ color: "#10B981" }}>O</th>
+                              <th style={{ color: "#F59E0B" }}>P</th>
+                              <th>Submissions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {studentProfiles
+                              .sort((a, b) => a.id.localeCompare(b.id))
+                              .map((p) => {
+                                const levelColor = (level) => {
+                                  if (level <= 1) return { bg: "#fef2f2", color: "#dc2626" };
+                                  if (level <= 2) return { bg: "#fff7ed", color: "#ea580c" };
+                                  if (level <= 3) return { bg: "#fefce8", color: "#ca8a04" };
+                                  if (level <= 4) return { bg: "#f0fdf4", color: "#16a34a" };
+                                  return { bg: "#ecfdf5", color: "#047857" };
+                                };
+                                const vLevel = p.vcop?.vocabulary?.level || 0;
+                                const cLevel = p.vcop?.connectives?.level || 0;
+                                const oUsed = p.vcop?.openers?.ispacedUsed?.length || 0;
+                                const oLevel = oUsed >= 5 ? 4 : oUsed >= 3 ? 3 : oUsed >= 1 ? 2 : 1;
+                                const pLevel = p.vcop?.punctuation?.level || 0;
+
+                                return (
+                                  <tr key={p.id}>
+                                    <td className="heatmap-student">{p.id}</td>
+                                    {[vLevel, cLevel, oLevel, pLevel].map((level, i) => {
+                                      const { bg, color } = levelColor(level);
+                                      return (
+                                        <td
+                                          key={i}
+                                          className="heatmap-cell"
+                                          style={{ backgroundColor: bg, color }}
+                                        >
+                                          {level || "—"}
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="heatmap-submissions">{p.totalSubmissions || 0}</td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </>
                 )}
               </div>

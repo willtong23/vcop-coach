@@ -19,32 +19,38 @@ function getActualYear(studentId) {
   return YEAR_GROUP_MAP[prefix] || null;
 }
 
-function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext, feedbackAmount) {
+function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel, studentProfile, feedbackAmount) {
   const dimensions = (vcopFocus && vcopFocus.length > 0 ? vcopFocus : ["V", "C", "O", "P"]);
 
   const dimensionDescriptions = {
-    V: `Vocabulary — word choices that make writing interesting and precise.
-   Basic: Use interesting/wow words instead of ordinary ones (said → whispered/exclaimed, nice → magnificent/delightful, big → enormous/towering, walked → trudged/sprinted)
-   Intermediate: Sensory language (sounds, sights, textures, smells), precise verbs that show rather than tell, figurative language (simile: "as quiet as a mouse", metaphor: "the classroom was a zoo")
-   Advanced: Word choice that controls tone and atmosphere, technical vocabulary used naturally, connotation awareness (slim vs skinny, curious vs nosy)`,
-    C: `Connectives — words and phrases that join ideas and control the flow of writing.
-   Basic: and, but, so, because, then, or, when
-   Intermediate: meanwhile, however, although, furthermore, on the other hand, as a result, in addition, despite, even though, whereas
-   Advanced: Discourse markers that control paragraph flow (consequently, nevertheless, in contrast), subordinating conjunctions creating complex sentences, connectives that show subtle relationships between ideas`,
-    O: `Openers — how sentences begin. Six specific types:
-   (1) Adverb opener (-ly words): Silently, Nervously, Suddenly, Carefully, Eagerly
-   (2) -ing opener (action words): Running through the forest, Gazing at the stars, Trembling with fear
-   (3) Question opener: Have you ever wondered...? What would you do if...? Can you imagine...?
-   (4) Prepositional phrase opener (where/when): Under the bridge, At midnight, During the storm, Behind the door
-   (5) -ed opener (past participle): Exhausted from the journey, Convinced she was right, Shocked by the noise
-   (6) Short punchy statement: It was over. She knew. Nothing moved. Silence.
+    V: `Vocabulary (WOW Words) — replace "dead" or dull words with ambitious, contextually appropriate alternatives.
+   Level 1-2 (Basic): went→ran/skipped, said→asked/replied, big→huge/large, nice→pretty/fun, quickly→fast/soon
+   Level 3-4 (WOW): went→trudged/prowled/sprinted, said→whispered/cried/bellowed, big→enormous/gigantic, nice→beautiful/glorious, bad→fierce/terrifying
+   Level 5+ (Sophisticated): went→meandered/lumbered/swaggered, said→enunciated/retorted/murmured, big→formidable/colossal, bad→malevolent/sinister/foreboding, nice→sumptuous/quintessential
+   Look for: sensory language (sounds, sights, textures, smells, tastes), figurative language (similes, metaphors, personification), precise verbs that "show not tell"
+   When suggesting, ask: What does it look/sound/feel like? Match WOW words to the student's target year level.`,
+    C: `Connectives (Captain Connectives) — structural mortar that controls flow, rhythm, and logical relationships.
+   Level 1: and, but, so, then
+   Level 2: because, when, if, or
+   Level 3: after, while, as well as, also, besides, before, until
+   Level 4: although, however, even though, nevertheless, meanwhile, furthermore
+   Level 5+: despite, contrary to, in addition to, owing to, consequently, whereas
+   KEY: If student chains "and...and...and", prompt upgrade. Teach position variety: subordinate clauses can OPEN a sentence.`,
+    O: `Openers — use the ISPACED framework. If 2+ consecutive sentences start the same way, intervene.
+   I = -Ing opener: "Running towards the sea..." / "Trembling with fear..."
+   S = Simile opener: "Like a bottle-nose dolphin..." / "As quiet as a mouse..."
+   P = Preposition opener: "Under the bridge..." / "At midnight..." / "During the storm..."
+   A = Adverb (-ly) opener: "Silently, she waited..." / "Carefully, he crept..."
+   C = Connective opener: "Despite it being warm..." / "However..." / "Although..."
+   E = -Ed opener: "Exhausted from the journey..." / "Excited by the news..."
+   D = Dialogue opener: "'Wake up!' cried mum."
    COMMA RULE: -ly, -ing, prepositional, and -ed openers MUST be followed by a comma.
-   Feedback should identify which types the student used and suggest types they haven't tried yet.`,
-    P: `Punctuation — varied and purposeful punctuation use (NOT just full stops — those are basic and expected).
-   Basic: Full stops, capital letters, commas in lists (apples, bananas, and oranges)
-   Intermediate: Apostrophes (it's, don't, the dog's bone), speech marks ("Hello," said Tom), commas after openers (Slowly, he turned), question marks, exclamation marks
-   Advanced: Semicolons linking related ideas; colons introducing lists or explanations: dashes for dramatic effect — like this, ellipsis for suspense..., brackets for extra information (which is optional)
-   Do NOT praise basic full stops — only praise noteworthy punctuation choices.`,
+   Count how many DIFFERENT ISPACED types the student uses. If fewer than 3, suggest a new type.`,
+    P: `Punctuation (Doctor Punctuation) — a tool for VOICE, PACING, and DRAMATIC EFFECT.
+   Level 1 (Base): Full stops (.) and capitals — basic boundaries. Do NOT praise these.
+   Level 2 (Middle): Commas in lists, exclamation marks, question marks, apostrophes for contraction, speech marks. Praise accurate speech marks and commas after openers.
+   Level 3+ (Peak): Semicolons (;) linking related clauses, colons (:) for revelations or lists, brackets for asides, dashes (—) for emphasis, ellipsis (...) for suspense. Praise and encourage these.
+   TEACHING: Eliminate comma splices/run-on sentences. Check speech mark accuracy. Prompt advanced students to use colons for revelation or semicolons for flow.`,
   };
 
   const focusList = dimensions
@@ -58,13 +64,13 @@ function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, it
   const baseYear = actualYear ? actualYear.year : 5; // default Y5 if unknown
   const isRevision = iterationNumber > 1 && previousText;
 
-  // For revision (v2), we DON'T find new problems — only check what was fixed
+  // For revision (v2+), evaluate each original issue with 3 statuses: improved / attempted / not_yet
   if (isRevision) {
     const prevAnnotationsJson = previousAnnotations ? JSON.stringify(previousAnnotations) : "[]";
 
-    return `You are a warm, encouraging English teacher for primary school students (ages 7-11). The student has revised their writing. Your ONLY job is to check which of the ORIGINAL suggestions they fixed.
+    return `You are a warm, encouraging English teacher for primary school students (ages 7-11). The student has revised their writing based on your earlier feedback. Your job is to evaluate EACH original issue.
 
-PREVIOUS VERSION:
+ORIGINAL VERSION (first draft):
 """
 ${previousText}
 """
@@ -72,23 +78,44 @@ ${previousText}
 ORIGINAL FEEDBACK (from v1):
 ${prevAnnotationsJson}
 
-RULES FOR REVISION EVALUATION:
-1. Go through EACH annotation from the original feedback that was type "spelling", "grammar", or "suggestion".
-2. For each one, check if the student fixed it in their new version.
-3. If FIXED: output type "revision_good" with phrase = the NEW corrected text from their revision.
-4. If NOT FIXED (still the same problem): output the ORIGINAL annotation exactly as it was (same type, phrase, suggestion, dimension).
-5. Keep any "praise" annotations that still apply to the new text.
-6. Do NOT find any NEW problems. Do NOT add new spelling, grammar, or suggestion annotations that weren't in the original feedback.
-7. The "phrase" field MUST match EXACT text from the student's NEW writing.
+EVALUATION RULES:
+Go through EACH annotation from the original feedback that was type "spelling", "grammar", or "suggestion". For each one, determine ONE of three statuses:
+
+✅ IMPROVED (type "revision_good"):
+- The student changed this part AND it is genuinely better than before.
+- The student does NOT need to match your exact suggestion. Any improvement counts!
+- Example: You suggested "diverse topics" but student wrote "different topics" → this IS an improvement over the original "all sorts of subjects" → mark as revision_good.
+- Include a "suggestion" field with encouraging feedback. If the student's fix differs from your original suggestion, praise their choice AND optionally offer a further upgrade.
+- Format: "Good improvement! [praise their specific change]. [optional: Want to push even further? Try '[better option]' for an even stronger upgrade.]"
+
+🔄 ATTEMPTED (type "revision_attempted"):
+- The student clearly tried to change this part, but the change did NOT improve it or introduced a new problem.
+- Example: Student tried to fix a spelling error but misspelled the new word too.
+- Example: Student replaced a word but the replacement doesn't fit the context.
+- Include "suggestion" with: acknowledge the effort → explain the issue → give guidance.
+- Include "originalType" ("spelling", "grammar", or "suggestion") and "dimension" if applicable.
+
+⬜ NOT YET (keep original annotation):
+- The student did NOT change this part at all — the original problem text is still there unchanged.
+- Output the ORIGINAL annotation exactly as it was (same type, phrase, suggestion, dimension).
+
+ADDITIONAL RULES:
+- Keep any "praise" annotations that still apply to the new text (phrase still exists in new version).
+- Do NOT find any NEW problems. Only evaluate issues from the original feedback.
+- The "phrase" field MUST match EXACT text from the student's NEW writing.
+- "originalPhrase" field = the exact phrase from the ORIGINAL version that was flagged.
+- CORE PRINCIPLE: Always acknowledge student effort first. Never ignore a student's attempt to improve.
 
 You MUST respond with ONLY valid JSON in this exact format, no other text:
 {
   "annotations": [
-    { "phrase": "corrected text in new version", "type": "revision_good" },
+    { "phrase": "student's new text", "originalPhrase": "original text", "type": "revision_good", "suggestion": "Great improvement! 'different topics' is clearer than 'all sorts of subjects'." },
+    { "phrase": "student's attempted text", "originalPhrase": "original text", "type": "revision_attempted", "suggestion": "Good try! You changed this, but 'becose' still needs fixing — try 'because'.", "originalType": "spelling" },
+    { "phrase": "student's attempted text", "originalPhrase": "original text", "type": "revision_attempted", "suggestion": "Nice effort changing this! The word 'big' works, but try an even stronger WOW word like 'enormous'.", "originalType": "suggestion", "dimension": "V" },
     { "phrase": "unchanged misspelled word", "suggestion": "correct spelling", "type": "spelling" },
     { "phrase": "unchanged grammar error", "suggestion": "corrected grammar", "type": "grammar" },
     { "phrase": "unchanged text", "suggestion": "Try this...", "type": "suggestion", "dimension": "V" },
-    { "phrase": "good text", "type": "praise", "dimension": "C" }
+    { "phrase": "good text", "type": "praise", "dimension": "C", "suggestion": "This is good because..." }
   ]
 }`;
   }
@@ -135,35 +162,37 @@ ${focusList}
 ${yearExpectations ? `STUDENT LEVEL CONTEXT:\n${yearExpectations}\n` : ""}
 ${topic ? `WRITING TOPIC: ${topic}\nUse this topic context when evaluating the writing.\n` : ""}
 ${extraInstructions ? `ADDITIONAL TEACHER INSTRUCTIONS: ${extraInstructions}\n` : ""}
-${pastWritingContext ? `
-STUDENT'S PAST WRITING (use this to personalise your feedback):
-${pastWritingContext}
+${studentProfile ? `
+STUDENT PROFILE (use this to personalise your feedback):
+${studentProfile}
 
-PAST WRITING RULES:
-- When giving VCOP suggestions, reference specific examples from the student's past writing when relevant.
-  Example: "You used a great -ly opener before: 'Nervously, she opened the letter.' Try one here too!"
-  Example: "Last time you used 'meanwhile' as a connective — nice! Can you use another time connective here?"
-- If the student did something well before but NOT in this piece, gently remind them using POSITIVE framing:
-  Example: "In your last piece you remembered to use commas after your openers — don't forget here!"
-- NEVER use negative framing like "you used to be better" or "you've gotten worse".
-- Always frame past references as encouragement: "you did this well before, try it again!"
-- Only reference past writing in "suggestion" or "praise" annotations, not in spelling/grammar.
-- If no past examples are relevant, just give normal feedback — don't force past references.
+PROFILE-BASED FEEDBACK RULES:
+- Reference the student's VCOP levels to calibrate your feedback difficulty.
+- If student has weaknesses listed, prioritise suggestions in those areas.
+- If student has strengths, acknowledge them when relevant (e.g. "You're great at -ly openers!").
+- Reference recentWowWords: "You used 'trembling' last time — try another sensory word!"
+- Check ispacedNeverUsed to suggest new opener types they haven't tried.
+- Reference teacherNotes (if any) as teaching guidance from the teacher.
+- Reference growthNotes for encouragement: "You started using semicolons recently — keep it up!"
+- Frame everything positively, never negatively.
+- Only reference profile data in "suggestion" or "praise" annotations, not in spelling/grammar.
+- If no profile data is relevant to a particular annotation, just give normal feedback.
 ` : ""}
-${dimensions.includes("O") ? `OPENERS DIMENSION — DETAILED ANALYSIS INSTRUCTIONS:
-You must analyse sentence openers using these 6 specific types:
-1. Adverb opener (-ly words): e.g. "Silently, the cat crept..." / "Nervously, she opened..."
-2. -ing opener (action words): e.g. "Running through the forest, he..." / "Gazing at the stars, she..."
-3. Question opener: e.g. "Have you ever wondered...?" / "What would you do if...?"
-4. Prepositional phrase opener (where/when): e.g. "Under the bridge, ..." / "At midnight, ..." / "During the storm, ..."
-5. -ed opener (past participle): e.g. "Exhausted from the journey, he..." / "Convinced she was right, ..."
-6. Short punchy statement: e.g. "It was over." / "She knew." / "Nothing moved."
+${dimensions.includes("O") ? `OPENERS DIMENSION — ISPACED ANALYSIS:
+Analyse sentence openers using the ISPACED framework (7 types):
+I = -Ing opener: "Running through the forest, he..." / "Gazing at the stars, she..."
+S = Simile opener: "Like a shot from a cannon..." / "As quiet as a mouse..."
+P = Preposition opener: "Under the bridge, ..." / "At midnight, ..." / "During the storm, ..."
+A = Adverb (-ly) opener: "Silently, the cat crept..." / "Nervously, she opened..."
+C = Connective opener: "Although it was raining..." / "Despite the cold..."
+E = -Ed opener: "Exhausted from the journey, he..." / "Convinced she was right, ..."
+D = Dialogue opener: "'Wake up!' cried mum." / "'Run!' he screamed."
 
 OPENER FEEDBACK RULES:
-- PRAISE (type "praise", dimension "O"): When the student uses one of the 6 opener types, praise it and NAME the type. In the suggestion field or as part of what you highlight, say which type it is. Example: praise phrase "Silently, the cat crept" — this is an adverb (-ly) opener.
-- SUGGESTION (type "suggestion", dimension "O"): If most sentences start the same way (e.g. all starting with "I" or "The"), pick one sentence and suggest rewriting it with a specific opener type. Give the FULL rewritten example using the student's own words. Example: phrase "The cat crept across the room", suggestion "Try an adverb opener: 'Silently, the cat crept across the room.'"
-- Count how many DIFFERENT opener types the student uses. If fewer than 3 types, suggest trying a new type they haven't used yet.
-- COMMA RULE: Remind students that -ly openers, -ing openers, prepositional phrase openers, and -ed openers need a COMMA after them. If a student uses one of these openers but forgets the comma, flag it as a grammar annotation.
+- PRAISE (type "praise", dimension "O"): When the student uses an ISPACED opener type, praise it and NAME the ISPACED letter. Example: praise phrase "Silently, the cat crept" with suggestion "This is an A (Adverb) opener from ISPACED — it tells the reader HOW the action happened right from the start."
+- SUGGESTION (type "suggestion", dimension "O"): If most sentences start the same way (e.g. all starting with "I" or "The"), pick one sentence and suggest rewriting it with a specific ISPACED type. Give the FULL rewritten example using the student's own words. Example: phrase "The cat crept across the room", suggestion "Try an A (Adverb) opener: 'Silently, the cat crept across the room.'"
+- Count how many DIFFERENT ISPACED types the student uses. If fewer than 3 types, suggest trying a new type they haven't used yet and name which ISPACED letter it is.
+- COMMA RULE: -ly, -ing, prepositional, and -ed openers need a COMMA after them. If a student uses one but forgets the comma, flag it as a grammar annotation.
 ` : ""}ANNOTATION TYPES (show ALL feedback at once, not in batches):
 
 1. "spelling" — ONLY actual spelling mistakes (wrong letters, misspelled words). Shown in red.
@@ -217,16 +246,30 @@ OPENER FEEDBACK RULES:
 
 3. "suggestion" — VCOP improvement ideas (student can choose to fix or not).
    - "phrase" = exact text from writing (the specific words you're commenting on)
-   - "suggestion" = what to try instead, be specific and give an example
+   - "suggestion" = MUST contain ALL THREE parts:
+     (a) QUOTE: Reference the student's exact text
+     (b) TECHNIQUE: Name the specific VCOP technique (e.g. "WOW word upgrade", "A (Adverb) opener", "Level 4 connective", "colon for revelation")
+     (c) CONCRETE EXAMPLE: Provide a FULL rewritten version using the student's own words
+     BAD: "Try more punctuation." ← too vague, no technique named, no example
+     BAD: "Use better vocabulary." ← too vague, no specific text referenced
+     GOOD: "Your second paragraph is one very long sentence — it's a run-on. Try breaking it up: put a full stop after 'each lesson' and start a new sentence with 'We also'."
+     GOOD: "The word 'nice' here is a dead word. Try a WOW word: 'My favourite subject is fascinating because...' — 'fascinating' is a Level 3-4 WOW word that tells the reader exactly how you feel."
+     GOOD: "You started 3 sentences with 'I'. Try an A (Adverb) opener: 'Excitedly, I rushed to my favourite lesson' — the -ly word tells the reader HOW you felt."
    - "dimension" = one of ${dimensions.join("/")}
 
 4. "praise" — things done well. MUST include an explanation of WHY it's good.
    - "phrase" = exact text from writing (the specific words that are good)
-   - "suggestion" = REQUIRED explanation of why this is good. Be specific about the technique or skill demonstrated.
-     BAD: (no suggestion field, or empty)
-     GOOD: "You used specific detail to support your point, naming your teacher and explaining what makes the subject interesting. This makes your writing convincing."
-     GOOD: "This is an adverb (-ly) opener — it tells the reader HOW the action happened right from the start."
-     GOOD: "You used a comma to separate items in a list — this makes your sentence clear and easy to read."
+   - "suggestion" = REQUIRED. MUST contain ALL THREE parts:
+     (a) QUOTE: The phrase you're praising (already in "phrase" field)
+     (b) TECHNIQUE NAME: Name the specific VCOP technique or skill demonstrated
+     (c) EXPLANATION: Explain WHY this technique makes the writing better
+     BAD: "Keep practising punctuation!" ← no technique named, no explanation
+     BAD: "Good vocabulary!" ← no technique, no explanation of why
+     BAD: "Nice work here." ← completely empty praise
+     GOOD: "You used brackets in '(or on a computer)' to add extra information — this is a Level 3 punctuation technique called parenthesis! It lets you slip in an aside without breaking the sentence flow."
+     GOOD: "'Rushed' is a strong WOW word (Level 1-2 vocabulary upgrade from 'went') — it tells the reader you moved fast and with energy."
+     GOOD: "You used 'because' to explain your reason — this is a Level 2 connective that links your ideas with a cause-and-effect relationship."
+     GOOD: "'Excitedly, I...' is an A (Adverb) opener from ISPACED — starting with an -ly word tells the reader HOW you felt before revealing the action."
    - "dimension" = one of ${dimensions.join("/")}
 
 RULES:
@@ -236,6 +279,7 @@ RULES:
 4. Keep language simple and friendly — you're talking to a child.
 5. ONLY analyse the dimensions listed above. Do NOT include other VCOP dimensions.
 6. Maximum 3 "spelling" annotations AND maximum 3 "grammar" annotations. Pick the most critical errors in each category.
+6b. SOCRATIC RULE: You are a facilitator, NOT an editor. NEVER rewrite the student's text in its entirety. For suggestions, provide a brief example showing HOW to improve a specific phrase, then ask a guiding question to make the student think. Example: "Try an A (Adverb) opener here: 'Cautiously, Sally peered...' — what adverb would describe how she looked?" The cognitive load must stay on the student.
 7. FEEDBACK LEVEL (CRITICAL — this changes your entire approach):
    - Level 1: Judge by the student's actual year group. Focus on "Basic" items from each VCOP dimension. Praise basic skills done well. Suggestions should be simple, achievable next steps. Per dimension: 1 praise + 1 suggestion.
    - Level 2: Judge 1-2 years ABOVE actual year. Focus on "Intermediate" items from each VCOP dimension. Push for varied sentence structures, discourse markers, more precise vocabulary, sensory language. Per dimension: 1-2 praises + 1-2 suggestions.
@@ -244,61 +288,76 @@ RULES:
 8. Return ${minAnnotations}-${maxAnnotations} annotations total. Feedback amount is ${effectiveAmount}/3 (per dimension: ${praisePerDim} praise + ${suggPerDim} suggestion).
 9. Show ALL feedback at once. The student will see everything in one go.
 10. CRITICAL — NEVER mark a correctly spelled word as a spelling error. Only mark words that are ACTUALLY misspelled or have ACTUAL grammar errors. If a word is spelled correctly, do NOT create a spelling annotation for it. Double-check every spelling annotation before including it.
-11. MANDATORY DIMENSION COVERAGE — For EACH active VCOP dimension (${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}), you MUST provide ${praisePerDim} praise AND ${suggPerDim} suggestion annotations. No dimension may be empty. If the writing genuinely has no strength in a dimension, praise the student's attempt and give an encouraging suggestion.
+11. ⚠️ MANDATORY — NON-NEGOTIABLE DIMENSION COVERAGE ⚠️
+   For EVERY active VCOP dimension (${dimensions.map(d => `${VCOP_EMOJIS[d]}${d}`).join(", ")}), you MUST return AT LEAST one "praise" annotation AND AT LEAST one "suggestion" annotation. NEVER leave any active dimension empty. This is non-negotiable.
    AMOUNT GUIDE: Per dimension: ${praisePerDim} praise(s) + ${suggPerDim} suggestion(s).${effectiveAmount === 1 ? " Keep it focused — exactly 1 praise and 1 suggestion per dimension." : effectiveAmount === 2 ? " Give 1-2 of each per dimension for moderate detail." : " Give 2-3 of each per dimension for thorough, detailed feedback. Level 3 = MOST detailed — do NOT give fewer annotations than lower levels."}
-   (a) Every "praise" annotation MUST include a "suggestion" field explaining WHY it's good — what technique or skill the student demonstrated. Never leave praise without an explanation.
-   (b) Every "suggestion" annotation MUST give a concrete improvement idea with a specific rewritten example using the student's own words.
-${dimensions.includes("P") ? `   PUNCTUATION PRAISE STANDARDS:
-   - Full stops at the end of sentences are BASIC and EXPECTED — do NOT praise them. They are not noteworthy.
-   - Worthy punctuation to praise: commas in lists, commas after openers, dashes for extra information, question marks, exclamation marks, brackets/parentheses, speech marks/quotation marks, semicolons, colons, apostrophes used correctly for possession.
-   - If the student's punctuation has NO noteworthy examples beyond basic full stops, do NOT invent a weak praise. Instead, provide TWO suggestion annotations for P — one simple punctuation to try (e.g. "try adding commas to separate your list") and one more advanced.
+
+12. ⚠️ FEEDBACK QUALITY RULES — EVERY annotation must pass this test:
+   (a) Every "praise" MUST name a specific technique (e.g. "Level 2 connective", "A (Adverb) opener", "WOW word", "parenthesis") and explain WHY it improves the writing. Vague praise like "Keep practising!" or "Good job!" will be REJECTED.
+   (b) Every "suggestion" MUST identify a specific problem, name the technique to fix it, and provide a concrete rewritten example using the student's own words. Vague suggestions like "Try more punctuation" or "Use better vocabulary" will be REJECTED.
+
+${dimensions.includes("P") ? `13. PUNCTUATION ANALYSIS CHECKLIST — work through these IN ORDER before writing P annotations:
+   (a) Full stops & capitals: Are sentence boundaries correct? Any run-on sentences or comma splices? (If yes → grammar annotation, NOT praise)
+   (b) Run-on sentences: Find the longest sentence. Does it need breaking up? Where exactly should it be split? (If yes → suggestion with exact split point)
+   (c) Commas: Used in lists? After ISPACED openers (-ly, -ing, -ed, prepositional)? In embedded clauses? (If good → praise naming "comma after opener" or "comma in list")
+   (d) Question marks & exclamation marks: Used correctly? (If yes → praise)
+   (e) Advanced punctuation: Any speech marks, apostrophes for possession, dashes, brackets/parenthesis, colons, semicolons, ellipsis? (If yes → praise naming the specific technique and its Punctuation Pyramid level. If no → suggestion to try one, with a concrete example from their text)
+   PUNCTUATION PRAISE STANDARDS:
+   - Full stops at sentence ends are BASIC and EXPECTED — do NOT praise them.
+   - If the student's punctuation has NO noteworthy examples beyond basic full stops, do NOT invent weak praise. Instead, provide TWO suggestion annotations for P — one simple (e.g. adding commas) and one more advanced (e.g. trying a colon or dash).
+` : ""}${dimensions.includes("V") ? `${dimensions.includes("P") ? "14" : "13"}. VOCABULARY ANALYSIS CHECKLIST — work through these before writing V annotations:
+   (a) Dead words: Scan for overused words (nice, good, bad, said, went, big, happy, sad, like). Each one found → potential suggestion to upgrade with a WOW word from the appropriate tier.
+   (b) Repeated words: Any word used 3+ times? (If yes → suggestion to vary with synonyms)
+   (c) WOW words already used: Any ambitious vocabulary choices? (If yes → praise naming the word, its WOW tier level, and what it does better than the "dead" alternative)
+   (d) Sensory language: Any descriptions using sight, sound, smell, taste, touch? (If yes → praise. If no → suggestion to add sensory detail to a specific sentence)
+` : ""}${dimensions.includes("C") ? `${dimensions.includes("P") && dimensions.includes("V") ? "15" : dimensions.includes("P") || dimensions.includes("V") ? "14" : "13"}. CONNECTIVES ANALYSIS CHECKLIST — work through these before writing C annotations:
+   (a) Count different connectives used and identify their levels (Level 1: and/but/so, Level 2: because/when/if, Level 3: while/until, Level 4: although/however/nevertheless, Level 5+: despite/consequently)
+   (b) "And" chains: Any sentences chaining "and...and...and"? (If yes → suggestion to upgrade one to a higher-level connective, with rewritten example)
+   (c) Highest-level connective used: Praise it, naming its exact level.
+   (d) Missing connective levels: If student only uses Level 1-2, suggest trying a specific Level 3-4 connective with a rewritten example.
+` : ""}${dimensions.includes("O") ? `${[dimensions.includes("P"), dimensions.includes("V"), dimensions.includes("C")].filter(Boolean).length + 13}. OPENERS ANALYSIS CHECKLIST — work through these before writing O annotations:
+   (a) List the first word of every sentence. How many DIFFERENT ISPACED types are used? (Count: I=___, S=___, P=___, A=___, C=___, E=___, D=___)
+   (b) Consecutive same openers: Do 2+ sentences in a row start the same way (e.g. "I...", "I...", "I...")? (If yes → suggestion to rewrite one with a specific ISPACED type)
+   (c) ISPACED openers found: Praise each one, naming the ISPACED letter.
+   (d) Comma after opener: Check every -ly, -ing, -ed, and prepositional opener — is there a comma? (If missing → grammar annotation)
+   (e) If fewer than 3 ISPACED types used → suggestion to try a new type with a concrete rewritten example.
 ` : ""}
 
-BEFORE responding, verify your checklist:
-${dimensions.map(d => `- ${VCOP_EMOJIS[d]}${d}: has praise? __ has suggestion? __`).join("\n")}
-If ANY dimension is missing a praise or suggestion, add one before outputting.
+⚠️ MANDATORY PRE-OUTPUT CHECKLIST — DO NOT SKIP:
+${dimensions.map(d => `- ${VCOP_EMOJIS[d]}${d}: has ${minPraise}-${maxPraise} praise(s)? __ has ${minSugg}-${maxSugg} suggestion(s)? __`).join("\n")}
+STOP. Count annotations for each dimension. You need ${praisePerDim} praise(s) and ${suggPerDim} suggestion(s) PER dimension. Total VCOP annotations should be ${dimCount * (minPraise + minSugg)}-${dimCount * (maxPraise + maxSugg)}, plus spelling/grammar. Grand total: ${minAnnotations}-${maxAnnotations}.
+${effectiveAmount >= 2 ? `⚠️ AMOUNT IS ${effectiveAmount}/3 — you MUST give MORE than 1 per dimension. Giving only 1 praise + 1 suggestion per dimension is NOT ENOUGH at this amount level. Find MULTIPLE things to praise and MULTIPLE things to suggest for each dimension.` : ""}
 
 You MUST respond with ONLY valid JSON in this exact format, no other text:
 {
   "annotations": [
     { "phrase": "becuase", "suggestion": "because", "type": "spelling" },
     { "phrase": "i", "suggestion": "I", "type": "grammar" },
-    { "phrase": "keep", "suggestion": "keeps", "type": "grammar" },
-    { "phrase": "color", "suggestion": "colour", "type": "american_spelling" },
-${dimensions.map(d => `    { "phrase": "exact text", "suggestion": "Try...", "type": "suggestion", "dimension": "${d}" },\n    { "phrase": "exact text", "suggestion": "This is good because...", "type": "praise", "dimension": "${d}" }`).join(",\n")}
+${dimensions.map(d => {
+  const examples = [];
+  for (let i = 0; i < maxSugg; i++) {
+    examples.push(`    { "phrase": "exact text from student", "suggestion": "Name the technique + explain + give rewritten example", "type": "suggestion", "dimension": "${d}" }`);
+  }
+  for (let i = 0; i < maxPraise; i++) {
+    examples.push(`    { "phrase": "exact text from student", "suggestion": "Name the technique + explain WHY it's good", "type": "praise", "dimension": "${d}" }`);
+  }
+  return examples.join(",\n");
+}).join(",\n")}
   ]
 }`;
 
   return prompt;
 }
 
-function buildPastContext(pastDocs) {
-  const entries = pastDocs.map((doc, i) => {
-    const data = doc.data();
-    const firstIteration = data.iterations?.[0];
-    if (!firstIteration) return null;
+function buildProfileContext(profile) {
+  if (!profile) return "";
 
-    const text = (firstIteration.text || "").slice(0, 300);
-    const topic = data.sessionTopic || "untitled";
-    const annotations = firstIteration.annotations || [];
+  // Trim teacherNotes to last 3
+  if (profile.teacherNotes?.length > 3) {
+    profile.teacherNotes = profile.teacherNotes.slice(-3);
+  }
 
-    const praises = annotations
-      .filter(a => a.type === "praise" && a.phrase && a.dimension)
-      .map(a => `- ${VCOP_EMOJIS[a.dimension] || ""}${a.dimension}: "${a.phrase}"`)
-      .slice(0, 3);
-
-    const suggestions = annotations
-      .filter(a => a.type === "suggestion" && a.phrase && a.dimension)
-      .map(a => `- ${VCOP_EMOJIS[a.dimension] || ""}${a.dimension}: "${a.phrase}"${a.suggestion ? ` (${a.suggestion})` : ""}`)
-      .slice(0, 3);
-
-    let entry = `PAST WRITING #${i + 1} (topic: "${topic}"):\nText: "${text}${firstIteration.text?.length > 300 ? "..." : ""}"`;
-    if (praises.length > 0) entry += `\nGood examples found:\n${praises.join("\n")}`;
-    if (suggestions.length > 0) entry += `\nIssues found:\n${suggestions.join("\n")}`;
-    return entry;
-  }).filter(Boolean);
-
-  return entries.join("\n\n");
+  return JSON.stringify(profile, null, 2);
 }
 
 export default async function handler(req, res) {
@@ -315,30 +374,23 @@ export default async function handler(req, res) {
   try {
     const currentIteration = iterationNumber || 1;
 
-    // Fetch student's past writing for context
-    let pastWritingContext = "";
+    // Fetch student profile for personalised feedback context
+    let studentProfile = "";
     if (studentId && currentIteration === 1) {
       try {
         const db = getDb();
-        const pastSnap = await db.collection("submissions")
-          .where("studentId", "==", studentId)
-          .orderBy("createdAt", "desc")
-          .limit(6)
-          .get();
-
-        const pastDocs = pastSnap.docs
-          .filter(d => d.id !== existingSubmissionId)
-          .slice(0, 5);
-
-        if (pastDocs.length > 0) {
-          pastWritingContext = buildPastContext(pastDocs);
+        const profileSnap = await db.collection("studentProfiles").doc(studentId).get();
+        if (profileSnap.exists) {
+          studentProfile = buildProfileContext(profileSnap.data());
         }
       } catch (err) {
-        console.warn("Failed to fetch past submissions:", err.message);
+        console.warn("Failed to fetch student profile:", err.message);
       }
     }
 
-    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext, feedbackAmount);
+    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel, studentProfile, feedbackAmount);
+
+    console.log(`[ANALYZE] studentId=${studentId}, feedbackLevel=${feedbackLevel}, feedbackAmount=${feedbackAmount}, iteration=${currentIteration}, promptLength=${systemPrompt.length}`);
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -357,8 +409,30 @@ export default async function handler(req, res) {
     if (content.startsWith("```")) {
       content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     }
+    // Extract only the JSON object — AI sometimes appends commentary after the closing }
+    const firstBrace = content.indexOf("{");
+    if (firstBrace !== -1) {
+      let depth = 0;
+      let lastBrace = -1;
+      for (let i = firstBrace; i < content.length; i++) {
+        if (content[i] === "{") depth++;
+        else if (content[i] === "}") { depth--; if (depth === 0) { lastBrace = i; break; } }
+      }
+      if (lastBrace !== -1) {
+        content = content.slice(firstBrace, lastBrace + 1);
+      }
+    }
     const parsed = JSON.parse(content);
     const rawAnnotations = parsed.annotations || [];
+
+    // Log annotation counts by type and dimension
+    const typeCounts = {};
+    for (const a of rawAnnotations) {
+      const key = a.dimension ? `${a.type}:${a.dimension}` : a.type;
+      typeCounts[key] = (typeCounts[key] || 0) + 1;
+    }
+    console.log(`[ANALYZE] Raw annotations: ${rawAnnotations.length}, breakdown:`, JSON.stringify(typeCounts));
+    console.log(`[ANALYZE] stop_reason=${message.stop_reason}, output_tokens=${message.usage?.output_tokens}`);
 
     // Server-side validation: filter out annotations where phrase doesn't exist in text
     const studentText = text.trim();

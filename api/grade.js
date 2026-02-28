@@ -20,22 +20,20 @@ function buildGradingPrompt(actualYear) {
     ? `The student is currently in ${actualYear.label} (Year ${actualYear.year}).`
     : "The student's actual year level is unknown.";
 
-  return `You are an experienced UK primary/secondary English teacher assessing a student's writing level against UK National Curriculum year-level expectations.
+  return `You are an experienced UK primary/secondary English teacher assessing a student's writing level against UK National Curriculum year-level expectations using the Big Writing & VCOP framework.
 
 ${yearContext}
 
-Use the following Oxford Writing Criterion Scale internally to help you judge the appropriate Year level:
+Assess the text HOLISTICALLY across these strands:
+1. GHaSP: Grammar accuracy, Spelling accuracy, Punctuation accuracy
+2. VCOP: Vocabulary sophistication (WOW words), Connective level (Level 1-5+), Opener variety (ISPACED types used), Punctuation for effect (Pyramid level)
+3. Structure: Text organisation, paragraph use, audience awareness
+4. Writer's Voice: Tone control, literary features, stylistic devices
+
+Use the following Oxford Writing Criterion Scale to determine the Standard:
 ${VCOP_GRADING_KNOWLEDGE}
 
-Mapping guide (Oxford Standard → Year level):
-- Standard 1-2 → Y1-2
-- Standard 3 → Y3
-- Standard 4 → Y4
-- Standard 5 → Y5
-- Standard 6 → Y6
-- Standard 7 → Y7-8 or Y9+
-
-IMPORTANT: Grade the writing at its ACTUAL level, NOT the student's year group. A Y4 student can write at Y7-8 level. A Y6 student can write at Y3 level. Be honest and accurate.
+IMPORTANT: Grade the writing at its ACTUAL level, NOT the student's year group. A Y4 student can write at Y7-8 level. A Y6 student can write at Y3 level. Be honest and accurate. Grade based on what is CONSISTENTLY demonstrated, not one-off examples.
 
 Respond with ONLY valid JSON, no other text:
 {
@@ -44,7 +42,7 @@ Respond with ONLY valid JSON, no other text:
 }
 
 The "level" should be like "Y3", "Y4", "Y5", "Y6", "Y7-8", or "Y9+" etc.
-The "reason" should be ONE short sentence (under 25 words), citing specific evidence from the writing.`;
+The "reason" should be ONE short sentence (under 25 words), citing specific evidence (e.g. connective level, ISPACED openers, WOW words, punctuation pyramid level).`;
 }
 
 export default async function handler(req, res) {

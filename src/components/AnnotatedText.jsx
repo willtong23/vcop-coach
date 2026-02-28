@@ -1,3 +1,5 @@
+import { useCallback } from "react";
+
 const VCOP_EMOJIS = { V: "📚", C: "🔗", O: "✨", P: "🎯" };
 const VCOP_LABELS = { V: "Vocabulary", C: "Connectives", O: "Openers", P: "Punctuation" };
 const VCOP_COLORS = { V: "#8B5CF6", C: "#3B82F6", O: "#10B981", P: "#F59E0B" };
@@ -16,6 +18,14 @@ function cleanSuggestion(suggestion, phrase) {
   return suggestion.trim();
 }
 
+function scrollToAndFlash(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ann-flash");
+  setTimeout(() => el.classList.remove("ann-flash"), 1500);
+}
+
 export default function AnnotatedText({ text, annotations, changedWords, isFinalized, hiddenDimensions }) {
   if (!annotations || annotations.length === 0) {
     if (changedWords && changedWords.size > 0) {
@@ -28,6 +38,7 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
   const hidden = hiddenDimensions || new Set();
   const visibleAnnotations = annotations.filter((a) => {
     if (a.type === "revision_good") return true;
+    if (a.type === "revision_attempted") return true;
     if (a.type === "spelling") return !hidden.has("spelling");
     if (a.type === "grammar") return !hidden.has("grammar");
     if (a.type === "american_spelling") return !hidden.has("spelling");
@@ -61,12 +72,19 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
     }
   }
 
+  // Assign stable IDs for jump targets
+  const annIds = filtered.map((a, i) => `ann-${a.type}-${i}`);
+
   // === INLINE TEXT with highlights only (no note boxes) ===
   const segments = [];
   let key = 0;
   let pos = 0;
 
-  for (const ann of filtered) {
+  for (let fi = 0; fi < filtered.length; fi++) {
+    const ann = filtered[fi];
+    const inlineId = `inline-${annIds[fi]}`;
+    const cardId = `card-${annIds[fi]}`;
+
     if (ann.idx > pos) {
       const before = text.slice(pos, ann.idx);
       segments.push(
@@ -79,51 +97,85 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
     const phraseText = text.slice(ann.idx, ann.idx + ann.phrase.length);
 
     if (ann.type === "praise") {
-      segments.push(<span key={key++} className="ann-praise">{phraseText}</span>);
+      segments.push(
+        <span key={key++} id={inlineId} className="ann-praise ann-clickable"
+          onClick={() => scrollToAndFlash(cardId)}>
+          {phraseText}
+        </span>
+      );
     } else if (ann.type === "spelling" || (ann.type === "revision_retry" && ann.originalType === "spelling")) {
       if (isFinalized && ann.fixed) {
         segments.push(
-          <span key={key++} className="ann-fixed-wrap">
+          <span key={key++} id={inlineId} className="ann-fixed-wrap">
             <span className="ann-fixed">{phraseText}</span>
             <span className="ann-fixed-badge">✅</span>
           </span>
         );
       } else {
-        segments.push(<span key={key++} className="ann-error-text">{phraseText}</span>);
+        segments.push(
+          <span key={key++} id={inlineId} className="ann-error-text ann-clickable"
+            onClick={() => scrollToAndFlash(cardId)}>
+            {phraseText}
+          </span>
+        );
       }
     } else if (ann.type === "grammar" || (ann.type === "revision_retry" && ann.originalType === "grammar")) {
       if (isFinalized && ann.fixed) {
         segments.push(
-          <span key={key++} className="ann-fixed-wrap">
+          <span key={key++} id={inlineId} className="ann-fixed-wrap">
             <span className="ann-fixed">{phraseText}</span>
             <span className="ann-fixed-badge">✅</span>
           </span>
         );
       } else {
-        segments.push(<span key={key++} className="ann-grammar-text">{phraseText}</span>);
+        segments.push(
+          <span key={key++} id={inlineId} className="ann-grammar-text ann-clickable"
+            onClick={() => scrollToAndFlash(cardId)}>
+            {phraseText}
+          </span>
+        );
       }
     } else if (ann.type === "american_spelling") {
-      segments.push(<span key={key++} className="ann-american-text">{phraseText}</span>);
+      segments.push(
+        <span key={key++} id={inlineId} className="ann-american-text ann-clickable"
+          onClick={() => scrollToAndFlash(cardId)}>
+          {phraseText}
+        </span>
+      );
     } else if (ann.type === "suggestion" || (ann.type === "revision_retry" && !["spelling", "grammar"].includes(ann.originalType))) {
       if (isFinalized && ann.fixed) {
         segments.push(
-          <span key={key++} className="ann-fixed-wrap">
+          <span key={key++} id={inlineId} className="ann-fixed-wrap">
             <span className="ann-fixed">{phraseText}</span>
             <span className="ann-fixed-badge">✅</span>
           </span>
         );
       } else {
-        segments.push(<span key={key++} className="ann-suggestion-text-inline">{phraseText}</span>);
+        segments.push(
+          <span key={key++} id={inlineId} className="ann-suggestion-text-inline ann-clickable"
+            onClick={() => scrollToAndFlash(cardId)}>
+            {phraseText}
+          </span>
+        );
       }
     } else if (ann.type === "revision_good") {
       segments.push(
-        <span key={key++} className="ann-fixed-wrap">
+        <span key={key++} id={inlineId} className="ann-fixed-wrap ann-clickable"
+          onClick={() => scrollToAndFlash(cardId)}>
           <span className="ann-fixed">{phraseText}</span>
           <span className="ann-fixed-badge">✅</span>
         </span>
       );
+    } else if (ann.type === "revision_attempted") {
+      segments.push(
+        <span key={key++} id={inlineId} className="ann-attempted-wrap ann-clickable"
+          onClick={() => scrollToAndFlash(cardId)}>
+          <span className="ann-attempted">{phraseText}</span>
+          <span className="ann-attempted-badge">🔄</span>
+        </span>
+      );
     } else {
-      segments.push(<span key={key++}>{phraseText}</span>);
+      segments.push(<span key={key++} id={inlineId}>{phraseText}</span>);
     }
 
     pos = ann.idx + ann.phrase.length;
@@ -141,6 +193,10 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
   // === GROUPED FEEDBACK CARDS below text ===
   const sortByDim = (a, b) => (DIM_ORDER[a.dimension] ?? 99) - (DIM_ORDER[b.dimension] ?? 99);
 
+  // Build lookup from annotation to its annIds index
+  const annIdMap = new Map();
+  filtered.forEach((a, i) => annIdMap.set(a, annIds[i]));
+
   const praiseAnns = filtered.filter(a => a.type === "praise").sort(sortByDim);
   const suggestionAnns = filtered.filter(a => a.type === "suggestion" || (a.type === "revision_retry" && !["spelling", "grammar"].includes(a.originalType))).sort(sortByDim);
   const errorAnns = filtered.filter(a =>
@@ -148,8 +204,15 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
     (a.type === "revision_retry" && ["spelling", "grammar"].includes(a.originalType))
   );
   const revisionGoodAnns = filtered.filter(a => a.type === "revision_good");
+  const revisionAttemptedAnns = filtered.filter(a => a.type === "revision_attempted");
 
-  const hasFeedbackCards = praiseAnns.length > 0 || suggestionAnns.length > 0 || errorAnns.length > 0 || revisionGoodAnns.length > 0;
+  const hasFeedbackCards = praiseAnns.length > 0 || suggestionAnns.length > 0 || errorAnns.length > 0 || revisionGoodAnns.length > 0 || revisionAttemptedAnns.length > 0;
+
+  const BackToTextBtn = ({ annId }) => (
+    <button className="back-to-text-btn" onClick={() => scrollToAndFlash(`inline-${annId}`)} title="Back to text">
+      ↑
+    </button>
+  );
 
   return (
     <div className="annotated-text-container">
@@ -161,13 +224,37 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
           {revisionGoodAnns.length > 0 && (
             <div className="feedback-group feedback-group-fixed">
               <div className="feedback-group-header">
-                <span className="feedback-group-icon">✅</span> You fixed these!
+                <span className="feedback-group-icon">✅</span> You improved these!
               </div>
-              {revisionGoodAnns.map((a, i) => (
-                <div key={`rg-${i}`} className="feedback-card feedback-card-fixed">
-                  <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
-                </div>
-              ))}
+              {revisionGoodAnns.map((a, i) => {
+                const aid = annIdMap.get(a);
+                return (
+                  <div key={`rg-${i}`} id={`card-${aid}`} className="feedback-card feedback-card-fixed">
+                    <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
+                    {a.suggestion && <span className="feedback-card-tip">✅ {a.suggestion}</span>}
+                    <BackToTextBtn annId={aid} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Revision attempted */}
+          {revisionAttemptedAnns.length > 0 && (
+            <div className="feedback-group feedback-group-attempted">
+              <div className="feedback-group-header">
+                <span className="feedback-group-icon">🔄</span> Good try — almost there!
+              </div>
+              {revisionAttemptedAnns.map((a, i) => {
+                const aid = annIdMap.get(a);
+                return (
+                  <div key={`ra-${i}`} id={`card-${aid}`} className="feedback-card feedback-card-attempted">
+                    <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
+                    {a.suggestion && <span className="feedback-card-tip">🔄 {a.suggestion}</span>}
+                    <BackToTextBtn annId={aid} />
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -182,13 +269,15 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
                 const dimLabel = a.dimension ? VCOP_LABELS[a.dimension] : "";
                 const dimColor = a.dimension ? VCOP_COLORS[a.dimension] : "#666";
                 const dimBg = a.dimension ? VCOP_BG[a.dimension] : "#f1f5f9";
+                const aid = annIdMap.get(a);
                 return (
-                  <div key={`p-${i}`} className="feedback-card feedback-card-praise">
+                  <div key={`p-${i}`} id={`card-${aid}`} className="feedback-card feedback-card-praise">
                     <span className="ann-vcop-pill" style={{ background: dimBg, color: dimColor, borderColor: dimColor }}>
                       {dimEmoji} {dimLabel}
                     </span>
                     <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
                     {a.suggestion && <span className="feedback-card-explanation">{a.suggestion}</span>}
+                    <BackToTextBtn annId={aid} />
                   </div>
                 );
               })}
@@ -206,13 +295,15 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
                 const dimLabel = a.dimension ? VCOP_LABELS[a.dimension] : "";
                 const dimColor = a.dimension ? VCOP_COLORS[a.dimension] : "#666";
                 const dimBg = a.dimension ? VCOP_BG[a.dimension] : "#f1f5f9";
+                const aid = annIdMap.get(a);
                 return (
-                  <div key={`s-${i}`} className="feedback-card feedback-card-suggestion">
+                  <div key={`s-${i}`} id={`card-${aid}`} className="feedback-card feedback-card-suggestion">
                     <span className="ann-vcop-pill" style={{ background: dimBg, color: dimColor, borderColor: dimColor }}>
                       {dimEmoji} {dimLabel}
                     </span>
                     <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
                     {a.suggestion && <span className="feedback-card-tip">💡 {a.suggestion}</span>}
+                    <BackToTextBtn annId={aid} />
                   </div>
                 );
               })}
@@ -228,23 +319,26 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
               {errorAnns.map((a, i) => {
                 const phraseText = text.slice(a.idx, a.idx + a.phrase.length);
                 const actualType = a.type === "revision_retry" ? a.originalType : a.type;
+                const aid = annIdMap.get(a);
                 if (actualType === "american_spelling") {
                   return (
-                    <div key={`e-${i}`} className="feedback-card feedback-card-american">
+                    <div key={`e-${i}`} id={`card-${aid}`} className="feedback-card feedback-card-american">
                       <span className="feedback-card-icon">🟣</span>
                       <span className="feedback-card-phrase">"{phraseText}"</span>
                       <span className="feedback-card-tip">is American spelling — in British English we write '{a.suggestion}'</span>
+                      <BackToTextBtn annId={aid} />
                     </div>
                   );
                 }
                 const isSpelling = actualType === "spelling";
                 const suggestion = a.suggestion ? cleanSuggestion(a.suggestion, phraseText) : null;
                 return (
-                  <div key={`e-${i}`} className={`feedback-card ${isSpelling ? "feedback-card-spelling" : "feedback-card-grammar"}`}>
+                  <div key={`e-${i}`} id={`card-${aid}`} className={`feedback-card ${isSpelling ? "feedback-card-spelling" : "feedback-card-grammar"}`}>
                     <span className="feedback-card-icon">{isSpelling ? "🔴" : "🟠"}</span>
                     <span className="feedback-card-phrase">"{phraseText}"</span>
                     {suggestion && <span className="feedback-card-arrow">→</span>}
                     {suggestion && <span className="feedback-card-correction">{suggestion}</span>}
+                    <BackToTextBtn annId={aid} />
                   </div>
                 );
               })}
@@ -329,13 +423,19 @@ export function FeedbackLegend({ isRevision, isFinalized }) {
       </div>
       <div className="legend-row">
         <span className="legend-sample-suggestion">Blue text</span>
-        <span className="legend-label">= VCOP suggestion (could be better) 💡</span>
+        <span className="legend-label">= VCOP suggestion — click to see details! 💡</span>
       </div>
       {isRevision && (
-        <div className="legend-row">
-          <span className="legend-sample-fixed">Green text ✅</span>
-          <span className="legend-label">= You fixed this!</span>
-        </div>
+        <>
+          <div className="legend-row">
+            <span className="legend-sample-fixed">Green text ✅</span>
+            <span className="legend-label">= Improved!</span>
+          </div>
+          <div className="legend-row">
+            <span className="legend-sample-attempted">Amber text 🔄</span>
+            <span className="legend-label">= Good try, almost there!</span>
+          </div>
+        </>
       )}
       <div className="legend-divider" />
       <div className="legend-row">
