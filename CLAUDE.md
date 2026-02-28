@@ -77,7 +77,7 @@ feedback/{feedbackId}
 - `POST /api/grammar-check` — 老師點評文法修正（Claude Haiku，回傳 `{ corrected, hasChanges }`）
 - `POST /api/grade` — AI 寫作水平評級（英國 National Curriculum 標準，不封頂）
 
-## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context）
+## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context，2026-02-28 分組顯示）
 
 ### 語言標準：British English
 - AI 拼寫檢查以**英式拼法**為標準（colour, favourite, organise, travelled, centre）
@@ -131,19 +131,34 @@ feedback/{feedbackId}
 - **VCOP 維度強制覆蓋**：每個開啟的維度必須同時有 praise（✅ 做得好）AND suggestion（💡 建議），兩者缺一不可。Prompt 裡有 pre-output checklist 強制 AI 檢查每個維度的 praise/suggestion 覆蓋
 - **伺服器端驗證**：AI 回傳的 annotations 會被過濾 — phrase 必須在原文中找到精確匹配，否則丟棄；spelling/grammar 的 suggestion 不能和 phrase 相同
 
-### 顏色系統（視覺分離原則）
-- **學生原文**：永遠黑色字，正常字體
-- **做得好**（praise）：綠色字 `#16A34A`
-- **拼寫錯誤**（spelling）：紅色字 `#DC2626` + 底線，下方紅色邊框框 `#fef2f2` 顯示 🔴「原文 → 修正」
-- **文法錯誤**（grammar）：橘色字 `#D97706` + 底線，下方黃色邊框框 `#fffbeb` 顯示 🟠「原文 → 修正」
-- **美式拼法提示**（american_spelling）：紫色字 `#7C3AED` + 虛線底線，下方紫色邊框框 `#f5f3ff` 顯示 🟣 提示訊息
-- **VCOP 建議文字**：藍色字 `#2563EB`（在 legend 中說明為「Blue text = VCOP suggestion (could be better)」）
-- **AI 建議詳情**（suggestion note）：獨立一行，左縮排 24px，灰色背景 `#f1f5f9` 圓角框，左邊框 3px，深灰色字 `#475569`，字體 14px（比原文小），前面加 💡 圖示
-- **VCOP 維度 pill**：小彩色圓角標籤（11px），放在建議框左邊
+### 回饋顯示架構（分組顯示 + 信心優先）
+- **分兩層顯示**：
+  1. **Inline 文字**：學生原文 + 彩色標記（只有顏色，沒有 note box 打斷文字流）
+  2. **分組卡片**（在原文下方）：按類型分組，順序為：
+     - 🟢 **What you did well**（praise）：V → C → O → P 順序，綠色背景 `#f0fdf4`
+     - 💡 **What to try next**（suggestion）：V → C → O → P 順序，淺灰背景 `#f8fafc`
+     - ✏️ **Spelling & Grammar**（spelling + grammar + american_spelling）：放最後
+     - ✅ **You fixed these!**（revision_good）：修改版時顯示在最前
+- **設計原則**：學生先看到全部讚美建立信心，再看全部建議專注改進，最後看拼寫文法
+- **Inline 顏色**：
+  - 做得好 praise：綠色字 `#16A34A`
+  - 拼寫錯誤 spelling：紅色字 `#DC2626` + 底線
+  - 文法錯誤 grammar：橘色字 `#D97706` + 底線
+  - 美式拼法 american_spelling：紫色字 `#7C3AED` + 虛線底線
+  - VCOP 建議 suggestion：藍色字 `#2563EB` + 淺藍底線
+- **VCOP 維度 pill**：小彩色圓角標籤（11px），在卡片內顯示
   - V = 紫色 `#8B5CF6` / `#ede9fe`
   - C = 藍色 `#3B82F6` / `#dbeafe`
   - O = 綠色 `#10B981` / `#d1fae5`
   - P = 橘色 `#F59E0B` / `#fef3c7`
+
+### AI 分析動畫
+- 學生提交後顯示全屏覆蓋動畫面板（`analyzing-overlay`）
+- 漸層藍色背景 + 藍色邊框，包含：
+  - ✏️ 鉛筆搖擺動畫（`pencilWrite` 1.2s loop）
+  - 「Reading your writing...」脈動文字（`analyzePulse` 2s loop）
+  - 三個彈跳圓點（`dotBounce` 1.4s staggered）
+- 淡入動畫 0.4s（`analyzeIn`）
 
 ### FeedbackLegend 圖例
 - 預設隱藏，點「Legend」按鈕展開
