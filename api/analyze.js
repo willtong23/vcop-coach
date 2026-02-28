@@ -392,9 +392,13 @@ export default async function handler(req, res) {
 
     console.log(`[ANALYZE] studentId=${studentId}, feedbackLevel=${feedbackLevel}, feedbackAmount=${feedbackAmount}, iteration=${currentIteration}, promptLength=${systemPrompt.length}`);
 
+    // Scale max_tokens based on effective feedback amount — higher amount = more annotations = longer JSON
+    const effectiveAmt = Math.max(feedbackLevel || 1, feedbackAmount || 1);
+    const maxTokens = effectiveAmt >= 3 ? 4096 : effectiveAmt >= 2 ? 3072 : 2048;
+
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: (feedbackLevel || 1) >= 3 ? 4096 : 2048,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [
         {
@@ -405,6 +409,27 @@ export default async function handler(req, res) {
     });
 
     let content = message.content[0].text.trim();
+
+    // If response was truncated by max_tokens, try to salvage partial JSON
+    if (message.stop_reason === "max_tokens") {
+      console.warn(`[ANALYZE] Response truncated at ${maxTokens} tokens, attempting to salvage`);
+      // Close any open arrays and objects to make it parseable
+      const openBraces = (content.match(/{/g) || []).length;
+      const closeBraces = (content.match(/}/g) || []).length;
+      const openBrackets = (content.match(/\[/g) || []).length;
+      const closeBrackets = (content.match(/\]/g) || []).length;
+      // Trim to last complete annotation (last '}' before truncation)
+      const lastCompleteObj = content.lastIndexOf("}");
+      if (lastCompleteObj !== -1) {
+        content = content.slice(0, lastCompleteObj + 1);
+        // Close remaining open brackets/braces
+        const remainingBrackets = openBrackets - (content.match(/\]/g) || []).length;
+        const remainingBraces = openBraces - (content.match(/}/g) || []).length;
+        for (let i = 0; i < remainingBrackets; i++) content += "]";
+        for (let i = 0; i < remainingBraces; i++) content += "}";
+      }
+    }
+
     // Strip markdown code fences if present
     if (content.startsWith("```")) {
       content = content.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
@@ -422,7 +447,32 @@ export default async function handler(req, res) {
         content = content.slice(firstBrace, lastBrace + 1);
       }
     }
-    const parsed = JSON.parse(content);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (parseErr) {
+      // Try fixing common JSON issues: trailing commas, incomplete last entry
+      console.warn(`[ANALYZE] JSON parse failed, attempting fix: ${parseErr.message}`);
+      let fixed = content
+        .replace(/,\s*([\]}])/g, "$1")          // Remove trailing commas
+        .replace(/,\s*$/, "")                    // Remove trailing comma at end
+        .replace(/}\s*{/g, "},{");               // Fix missing comma between objects
+      try {
+        parsed = JSON.parse(fixed);
+      } catch (fixErr) {
+        // Last resort: extract whatever annotations we can find
+        console.error(`[ANALYZE] JSON fix also failed: ${fixErr.message}`);
+        const annotationMatches = [...content.matchAll(/\{[^{}]*"phrase"\s*:\s*"[^"]*"[^{}]*"type"\s*:\s*"[^"]*"[^{}]*\}/g)];
+        if (annotationMatches.length > 0) {
+          const salvaged = annotationMatches.map(m => { try { return JSON.parse(m[0]); } catch { return null; } }).filter(Boolean);
+          console.log(`[ANALYZE] Salvaged ${salvaged.length} annotations from broken JSON`);
+          parsed = { annotations: salvaged };
+        } else {
+          throw new Error("Could not parse AI response. Please try again.");
+        }
+      }
+    }
     const rawAnnotations = parsed.annotations || [];
 
     // Log annotation counts by type and dimension
