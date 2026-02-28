@@ -18,7 +18,7 @@ function getActualYear(studentId) {
   return YEAR_GROUP_MAP[prefix] || null;
 }
 
-function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel) {
+function buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, iterationNumber, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext) {
   const dimensions = (vcopFocus && vcopFocus.length > 0 ? vcopFocus : ["V", "C", "O", "P"]);
 
   const dimensionDescriptions = {
@@ -104,6 +104,21 @@ ${focusList}
 ${yearExpectations ? `STUDENT LEVEL CONTEXT:\n${yearExpectations}\n` : ""}
 ${topic ? `WRITING TOPIC: ${topic}\nUse this topic context when evaluating the writing.\n` : ""}
 ${extraInstructions ? `ADDITIONAL TEACHER INSTRUCTIONS: ${extraInstructions}\n` : ""}
+${pastWritingContext ? `
+STUDENT'S PAST WRITING (use this to personalise your feedback):
+${pastWritingContext}
+
+PAST WRITING RULES:
+- When giving VCOP suggestions, reference specific examples from the student's past writing when relevant.
+  Example: "You used a great -ly opener before: 'Nervously, she opened the letter.' Try one here too!"
+  Example: "Last time you used 'meanwhile' as a connective — nice! Can you use another time connective here?"
+- If the student did something well before but NOT in this piece, gently remind them using POSITIVE framing:
+  Example: "In your last piece you remembered to use commas after your openers — don't forget here!"
+- NEVER use negative framing like "you used to be better" or "you've gotten worse".
+- Always frame past references as encouragement: "you did this well before, try it again!"
+- Only reference past writing in "suggestion" or "praise" annotations, not in spelling/grammar.
+- If no past examples are relevant, just give normal feedback — don't force past references.
+` : ""}
 ${dimensions.includes("O") ? `OPENERS DIMENSION — DETAILED ANALYSIS INSTRUCTIONS:
 You must analyse sentence openers using these 6 specific types:
 1. Adverb opener (-ly words): e.g. "Silently, the cat crept..." / "Nervously, she opened..."
@@ -207,6 +222,35 @@ You MUST respond with ONLY valid JSON in this exact format, no other text:
   return prompt;
 }
 
+function buildPastContext(pastDocs) {
+  const entries = pastDocs.map((doc, i) => {
+    const data = doc.data();
+    const firstIteration = data.iterations?.[0];
+    if (!firstIteration) return null;
+
+    const text = (firstIteration.text || "").slice(0, 300);
+    const topic = data.sessionTopic || "untitled";
+    const annotations = firstIteration.annotations || [];
+
+    const praises = annotations
+      .filter(a => a.type === "praise" && a.phrase && a.dimension)
+      .map(a => `- ${VCOP_EMOJIS[a.dimension] || ""}${a.dimension}: "${a.phrase}"`)
+      .slice(0, 3);
+
+    const suggestions = annotations
+      .filter(a => a.type === "suggestion" && a.phrase && a.dimension)
+      .map(a => `- ${VCOP_EMOJIS[a.dimension] || ""}${a.dimension}: "${a.phrase}"${a.suggestion ? ` (${a.suggestion})` : ""}`)
+      .slice(0, 3);
+
+    let entry = `PAST WRITING #${i + 1} (topic: "${topic}"):\nText: "${text}${firstIteration.text?.length > 300 ? "..." : ""}"`;
+    if (praises.length > 0) entry += `\nGood examples found:\n${praises.join("\n")}`;
+    if (suggestions.length > 0) entry += `\nIssues found:\n${suggestions.join("\n")}`;
+    return entry;
+  }).filter(Boolean);
+
+  return entries.join("\n\n");
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -220,11 +264,35 @@ export default async function handler(req, res) {
 
   try {
     const currentIteration = iterationNumber || 1;
-    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel);
+
+    // Fetch student's past writing for context
+    let pastWritingContext = "";
+    if (studentId && currentIteration === 1) {
+      try {
+        const db = getDb();
+        const pastSnap = await db.collection("submissions")
+          .where("studentId", "==", studentId)
+          .orderBy("createdAt", "desc")
+          .limit(6)
+          .get();
+
+        const pastDocs = pastSnap.docs
+          .filter(d => d.id !== existingSubmissionId)
+          .slice(0, 5);
+
+        if (pastDocs.length > 0) {
+          pastWritingContext = buildPastContext(pastDocs);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch past submissions:", err.message);
+      }
+    }
+
+    const systemPrompt = buildSystemPrompt(vcopFocus, topic, extraInstructions, feedbackMode, currentIteration, previousText, previousAnnotations, studentId, feedbackLevel, pastWritingContext);
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      max_tokens: 1536,
       system: systemPrompt,
       messages: [
         {
