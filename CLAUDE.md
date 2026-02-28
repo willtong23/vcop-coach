@@ -79,6 +79,18 @@ feedback/{feedbackId}
 
 ## AI 回饋機制（2026-02-28 重寫，2026-02-28 顏色系統重設計，2026-02-28 spelling/grammar 拆分，2026-02-28 British English 標準，2026-02-28 過去寫作 context，2026-02-28 分組顯示）
 
+### VCOP 教學方法論知識庫
+- 檔案：`/api/vcop-knowledge.js`，匯出 `VCOP_KNOWLEDGE`（回饋用）和 `VCOP_GRADING_KNOWLEDGE`（評分用）
+- 基於 **Big Writing & VCOP methodology** 和 **Oxford Writing Criterion Scale**
+- 內容包含：
+  - **Vocabulary**：WOW words 替換表（old→ancient, said→whispered 等）、sensory language、figurative language
+  - **Connectives** Level 1-4 進階表：and → but/so/because → Before/After/If → although/however/despite/nevertheless
+  - **Openers** Level 1-4 進階表：The/My/I → First/Next/Then → Also/Soon/Because → -ly/-ing/Meanwhile + 六種 opener 類型
+  - **Punctuation 金字塔**：Standard 1-2（. A）→ Standard 3-4（" " , ! ?）→ Standard 5+（; : ( ) — ...）
+  - **Oxford Writing Criterion Scale** Standard 1-7：完整判斷標準
+  - **Up-levelling 回饋邏輯**：Vocabulary Swap → Opener Shift → Two Comma Trick → Connective Extension
+- 注入到 `analyze.js` 的 system prompt 和 `grade.js` 的 grading prompt
+
 ### 語言標準：British English
 - AI 拼寫檢查以**英式拼法**為標準（colour, favourite, organise, travelled, centre）
 - **美式拼法不是錯誤**：如果學生用了美式拼法（color, favorite, organize），不標記為 `spelling` 錯誤
@@ -253,11 +265,12 @@ feedback/{feedbackId}
 
 ## 老師 Dashboard 功能
 
-### AI Grading（英國課程標準）
-- 新 API endpoint `POST /api/grade`
+### AI Grading（Oxford Writing Criterion Scale）
+- API endpoint `POST /api/grade`，使用 Oxford Writing Criterion Scale (Standard 1-7) 評級
 - 根據學號前兩位自動識別學生實際年級（19→Y6, 20→Y5, 21→Y4）
-- 評級不封頂：Y4 學生可以被評為 Y7-8，Y6 可以被評為 Y3
-- 格式：`"Y5 level — Uses varied sentence openers and expanding vocabulary"`
+- 評級不封頂：Standard 1 到 Standard 7，基於學生寫作中一致展現的能力
+- 格式：`"Standard 4 — Develops ideas logically with paragraphs, uses adjectives and speech marks"`
+- 知識庫：`/api/vcop-knowledge.js` 提供 VCOP_GRADING_KNOWLEDGE 評分標準
 - Dashboard 顯示：
   - 提交列表 header：`[Y5]`（實際年級灰色）+ `[Y6]`（AI 評級藍色）
   - 展開詳情：完整 grading 面板，含差距指示（`+1 above` 綠色 / `2 below` 紅色）
@@ -326,9 +339,10 @@ src/
 
 api/
   ├── _firebase.js — Firebase Admin SDK 初始化
-  ├── analyze.js — AI 寫作分析（年級差異化 + 修改比對）
+  ├── analyze.js — AI 寫作分析（VCOP methodology + 年級差異化 + 修改比對）
+  ├── vcop-knowledge.js — Big Writing & VCOP 教學方法論知識庫（VCOP_KNOWLEDGE + VCOP_GRADING_KNOWLEDGE）
   ├── auth.js — 登入驗證
-  ├── grade.js — AI 寫作水平評級（英國 National Curriculum）
+  ├── grade.js — AI 寫作水平評級（Oxford Writing Criterion Scale, Standard 1-7）
   ├── grammar-check.js — 文法修正
   └── student.js — 學生帳號管理
 ```
