@@ -1,73 +1,47 @@
-import { useState } from "react";
-import WritingInput from "./components/WritingInput";
-import AnalyzeButton from "./components/AnalyzeButton";
-import FeedbackCard from "./components/FeedbackCard";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./contexts/AuthContext";
+import LoginPage from "./pages/LoginPage";
+import StudentWritePage from "./pages/StudentWritePage";
+import TeacherSetupPage from "./pages/TeacherSetupPage";
+import TeacherDashboardPage from "./pages/TeacherDashboardPage";
 import "./App.css";
 
+function ProtectedRoute({ children, allowedRole }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/" replace />;
+  if (allowedRole && user.role !== allowedRole) return <Navigate to="/" replace />;
+  return children;
+}
+
 export default function App() {
-  const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState(null);
-  const [error, setError] = useState(null);
-
-  const handleAnalyze = async () => {
-    setLoading(true);
-    setFeedback(null);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Something went wrong");
-      }
-
-      const data = await res.json();
-      setFeedback(data);
-    } catch (err) {
-      setError(err.message || "Could not analyse your writing. Please try again!");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>VCOP Coach ✏️</h1>
-        <p className="subtitle">
-          Your friendly writing helper! Paste your writing and let's see how
-          amazing it is.
-        </p>
-      </header>
-
-      <main className="app-main">
-        <WritingInput value={text} onChange={setText} disabled={loading} />
-        <AnalyzeButton
-          onClick={handleAnalyze}
-          loading={loading}
-          disabled={!text.trim()}
-        />
-
-        {error && (
-          <div className="error-message">
-            <p>Oops! {error}</p>
-          </div>
-        )}
-
-        {feedback && (
-          <div className="feedback-grid">
-            {feedback.map((item, i) => (
-              <FeedbackCard key={item.dimension} data={item} index={i} />
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+    <Routes>
+      <Route path="/" element={<LoginPage />} />
+      <Route
+        path="/student/write"
+        element={
+          <ProtectedRoute allowedRole="student">
+            <StudentWritePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/teacher/setup"
+        element={
+          <ProtectedRoute allowedRole="teacher">
+            <TeacherSetupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/teacher/dashboard"
+        element={
+          <ProtectedRoute allowedRole="teacher">
+            <TeacherDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
