@@ -37,6 +37,7 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
   // Filter annotations based on 10 toggles
   const hidden = hiddenDimensions || new Set();
   const visibleAnnotations = annotations.filter((a) => {
+    if (a.type === "plan_check") return true;
     if (a.type === "revision_good") return true;
     if (a.type === "revision_attempted") return true;
     if (a.type === "spelling") return !hidden.has("spelling");
@@ -53,8 +54,12 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
     return true;
   });
 
+  // Separate plan_check without phrase (not_yet) — they only show in cards, not inline
+  const planCheckNoPhrase = visibleAnnotations.filter(a => a.type === "plan_check" && (!a.phrase || a.phrase.trim() === ""));
+  const locatable = visibleAnnotations.filter(a => !(a.type === "plan_check" && (!a.phrase || a.phrase.trim() === "")));
+
   // Find each annotation's phrase position in the text
-  const located = visibleAnnotations
+  const located = locatable
     .map((a) => {
       const idx = text.toLowerCase().indexOf(a.phrase.toLowerCase());
       return { ...a, idx };
@@ -174,6 +179,13 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
           <span className="ann-attempted-badge">🔄</span>
         </span>
       );
+    } else if (ann.type === "plan_check") {
+      segments.push(
+        <span key={key++} id={inlineId} className={`ann-plan-check ann-clickable ${ann.status === "achieved" ? "ann-plan-achieved" : ""}`}
+          onClick={() => scrollToAndFlash(cardId)}>
+          {phraseText}
+        </span>
+      );
     } else {
       segments.push(<span key={key++} id={inlineId}>{phraseText}</span>);
     }
@@ -205,8 +217,9 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
   );
   const revisionGoodAnns = filtered.filter(a => a.type === "revision_good");
   const revisionAttemptedAnns = filtered.filter(a => a.type === "revision_attempted");
+  const planCheckAnns = [...filtered.filter(a => a.type === "plan_check"), ...planCheckNoPhrase];
 
-  const hasFeedbackCards = praiseAnns.length > 0 || suggestionAnns.length > 0 || errorAnns.length > 0 || revisionGoodAnns.length > 0 || revisionAttemptedAnns.length > 0;
+  const hasFeedbackCards = praiseAnns.length > 0 || suggestionAnns.length > 0 || errorAnns.length > 0 || revisionGoodAnns.length > 0 || revisionAttemptedAnns.length > 0 || planCheckAnns.length > 0;
 
   const BackToTextBtn = ({ annId }) => (
     <button className="back-to-text-btn" onClick={() => scrollToAndFlash(`inline-${annId}`)} title="Back to text">
@@ -252,6 +265,27 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
                     <span className="feedback-card-phrase">"{text.slice(a.idx, a.idx + a.phrase.length)}"</span>
                     {a.suggestion && <span className="feedback-card-tip">🔄 {a.suggestion}</span>}
                     <BackToTextBtn annId={aid} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Plan Check */}
+          {planCheckAnns.length > 0 && (
+            <div className="feedback-group feedback-group-plan">
+              <div className="feedback-group-header">
+                <span className="feedback-group-icon">📋</span> Your Plan Goals
+              </div>
+              {planCheckAnns.map((a, i) => {
+                const aid = annIdMap.get(a);
+                const isAchieved = a.status === "achieved";
+                return (
+                  <div key={`pc-${i}`} id={aid ? `card-${aid}` : undefined} className={`feedback-card ${isAchieved ? "feedback-card-plan-achieved" : "feedback-card-plan-notyet"}`}>
+                    <span className="feedback-card-icon">{isAchieved ? "✅" : "💡"}</span>
+                    {a.phrase && a.phrase.trim() && <span className="feedback-card-phrase">"{a.phrase}"</span>}
+                    {a.suggestion && <span className="feedback-card-tip">{a.suggestion}</span>}
+                    {aid && <BackToTextBtn annId={aid} />}
                   </div>
                 );
               })}

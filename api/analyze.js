@@ -74,7 +74,7 @@ Respond with ONLY valid JSON:
 // ============================================================
 // STEP 2: VCOP Analysis (focused, with error context from Step 1)
 // ============================================================
-function buildVcopPrompt(dimensions, studentId, feedbackLevel, feedbackAmount, topic, extraInstructions, studentProfile, errorPhrases) {
+function buildVcopPrompt(dimensions, studentId, feedbackLevel, feedbackAmount, topic, extraInstructions, studentProfile, errorPhrases, plan) {
   const level = feedbackLevel || 1;
   const amount = feedbackAmount || 1;
   const effectiveAmount = Math.max(level, amount);
@@ -138,7 +138,33 @@ I=-Ing ("Running..."), S=Simile ("Like a..."), P=Preposition ("Under...","At mid
     ? `\n⚠️ SENTENCES WITH ERRORS (from spelling/grammar check — do NOT use these for praise):\n${errorPhrases.map(p => `- "${p}"`).join("\n")}\nAny phrase containing these errors MUST NOT be praised. Find error-free phrases instead.\n`
     : "";
 
-  let prompt = `You are a warm, encouraging English teacher analysing student writing using the VCOP framework. Return ONLY "suggestion" and "praise" annotations.
+  // Build plan check section if student made a plan
+  let planCheckSection = "";
+  if (plan && typeof plan === "object") {
+    const planParts = [];
+    if (plan.wowWords && plan.wowWords.length > 0) {
+      planParts.push(`- WOW WORDS planned: ${plan.wowWords.join(", ")}. Check if these exact words (or close variants) appear in the writing.`);
+    }
+    if (plan.openerType) {
+      planParts.push(`- OPENER TYPE planned: "${plan.openerType}". Check if any sentence starts with this opener style.`);
+    }
+    if (plan.connective) {
+      planParts.push(`- CONNECTIVE planned: "${plan.connective}". Check if this connective appears in the writing.`);
+    }
+    if (planParts.length > 0) {
+      planCheckSection = `
+PLAN VS WRITING CHECK:
+The student made a plan before writing. Check if they followed through on their VCOP goals.
+${planParts.join("\n")}
+
+For EACH planned item, output a "plan_check" annotation:
+- If achieved: { "type": "plan_check", "phrase": "exact text where they used it", "suggestion": "You planned to use [word/technique] and you did! Well done!", "status": "achieved" }
+- If not yet: { "type": "plan_check", "phrase": "", "suggestion": "You planned to use [word/technique] — try adding it in your next revision!", "status": "not_yet" }
+`;
+    }
+  }
+
+  let prompt = `You are a warm, encouraging English teacher analysing student writing using the VCOP framework. Return ONLY "suggestion" and "praise" annotations (and "plan_check" if a plan exists).
 
 STUDENT: ${actualYearLabel} (age ${baseYear + 3}-${baseYear + 4}).
 FEEDBACK LEVEL: ${level}/3, evaluating at Y${targetYear} standard.
@@ -154,7 +180,7 @@ ${dimInstructions.join("\n\n")}
 ANNOTATION FORMAT:
 - "suggestion" (type): VCOP improvement idea. "phrase" = exact text from writing. "suggestion" = (1) quote student's text, (2) name the VCOP technique, (3) give a concrete rewritten example. "dimension" = V/C/O/P.
 - "praise" (type): Something done well. "phrase" = exact text from writing. "suggestion" = (1) name the technique, (2) explain WHY it's good. "dimension" = V/C/O/P.
-
+${planCheckSection}
 RULES:
 1. "phrase" MUST be EXACT text from the student's writing (case-sensitive). Non-matching phrases will be discarded.
 2. Be encouraging, specific, friendly — you're talking to a child aged ${baseYear + 3}-${baseYear + 4}.
@@ -164,13 +190,15 @@ RULES:
 6. Per dimension: ${praisePerDim} praise(s) + ${suggPerDim} suggestion(s).${effectiveAmount >= 2 ? " You MUST give MORE than 1 per dimension at this amount level." : ""}
 
 PRE-OUTPUT CHECK — verify EVERY dimension has both praise AND suggestion:
-${dimensions.map(d => `- ${VCOP_EMOJIS[d]}${d}: ${minPraise}-${maxPraise} praise, ${minSugg}-${maxSugg} suggestion`).join("\n")}
+${dimensions.map(d => `- ${VCOP_EMOJIS[d]}${d}: ${minPraise}-${maxPraise} praise, ${minSugg}-${maxSugg} suggestion`).join("\n")}${planCheckSection ? `\n⚠️ MANDATORY: You MUST also include plan_check annotations for EACH planned item (wowWords, openerType, connective). Missing plan_check annotations = REJECTED output.` : ""}
 
 Respond with ONLY valid JSON:
 {
   "annotations": [
 ${dimensions.map(d => `    { "phrase": "exact text", "suggestion": "technique + explanation + example", "type": "suggestion", "dimension": "${d}" },
-    { "phrase": "exact text", "suggestion": "technique + why it's good", "type": "praise", "dimension": "${d}" }`).join(",\n")}
+    { "phrase": "exact text", "suggestion": "technique + why it's good", "type": "praise", "dimension": "${d}" }`).join(",\n")}${planCheckSection ? `,
+    { "type": "plan_check", "phrase": "exact text or empty", "suggestion": "You planned to use X and you did! Well done!", "status": "achieved" },
+    { "type": "plan_check", "phrase": "", "suggestion": "You planned to use X — try adding it in your next revision!", "status": "not_yet" }` : ""}
   ]
 }`;
 
@@ -305,7 +333,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { text, sessionId, studentId, vcopFocus, topic, extraInstructions, feedbackMode, feedbackLevel, feedbackAmount, submissionId: existingSubmissionId, iterationNumber, previousText, previousAnnotations } = req.body || {};
+  const { text, sessionId, studentId, vcopFocus, topic, extraInstructions, feedbackMode, feedbackLevel, feedbackAmount, submissionId: existingSubmissionId, iterationNumber, previousText, previousAnnotations, plan } = req.body || {};
 
   if (!text || typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "Please provide some writing to analyse." });
@@ -418,7 +446,7 @@ export default async function handler(req, res) {
     // ── STEP 2: VCOP Analysis ──
     const effectiveAmt = Math.max(feedbackLevel || 1, feedbackAmount || 1);
     const step2MaxTokens = effectiveAmt >= 3 ? 4096 : effectiveAmt >= 2 ? 3072 : 2048;
-    const step2Prompt = buildVcopPrompt(dimensions, studentId, feedbackLevel, feedbackAmount, topic, extraInstructions, studentProfile, errorPhrases);
+    const step2Prompt = buildVcopPrompt(dimensions, studentId, feedbackLevel, feedbackAmount, topic, extraInstructions, studentProfile, errorPhrases, plan);
     console.log(`[STEP2-VCOP] dimensions=${dimensions.join(",")}, level=${feedbackLevel}, amount=${feedbackAmount}, promptLength=${step2Prompt.length}, maxTokens=${step2MaxTokens}`);
 
     const step2Message = await client.messages.create({
@@ -431,6 +459,13 @@ export default async function handler(req, res) {
     let step2Content = handleTruncation(step2Message.content[0].text.trim(), step2Message.stop_reason, step2MaxTokens, "STEP2");
     const step2Parsed = parseAIResponse(step2Content, "STEP2");
     const vcopAnnotations = (step2Parsed.annotations || []).filter(a => {
+      // plan_check with "not_yet" status can have empty phrase
+      if (a.type === "plan_check") {
+        if (a.status === "not_yet") return true;
+        if (!a.phrase || typeof a.phrase !== "string") return false;
+        const studentText = text.trim();
+        return studentText.includes(a.phrase) || studentText.toLowerCase().includes(a.phrase.toLowerCase());
+      }
       if (!a.phrase || typeof a.phrase !== "string") return false;
       const studentText = text.trim();
       return studentText.includes(a.phrase) || studentText.toLowerCase().includes(a.phrase.toLowerCase());
@@ -465,7 +500,7 @@ export default async function handler(req, res) {
         });
         submissionId = existingSubmissionId;
       } else {
-        const docRef = await db.collection("submissions").add({
+        const submissionData = {
           sessionId,
           studentId,
           sessionTopic: topic || null,
@@ -473,7 +508,11 @@ export default async function handler(req, res) {
           teacherComment: null,
           createdAt: FieldValue.serverTimestamp(),
           iterations: [iterationEntry],
-        });
+        };
+        if (plan && typeof plan === "object") {
+          submissionData.plan = plan;
+        }
+        const docRef = await db.collection("submissions").add(submissionData);
         submissionId = docRef.id;
       }
     }

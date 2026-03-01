@@ -413,6 +413,26 @@ body {
   animation: pulse 1.5s ease infinite;
 }
 
+.speech-button-large {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  width: 60px;
+  height: 60px;
+  font-size: 28px;
+  margin: 12px auto 0;
+  border-width: 3px;
+  border-color: #fbbf24;
+  background: white;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3);
+}
+
+.speech-button-large:hover {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  transform: scale(1.05);
+}
+
 @keyframes pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.1); }
@@ -2376,6 +2396,252 @@ body {
 .show-teacher-button:active {
   transform: translateY(0);
 }
+
+/* ========== Planning Mode ========== */
+
+/* Mode tabs */
+.mode-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 2px solid var(--border);
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  border: none;
+  background: var(--card-bg);
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-tab:first-child {
+  border-right: 2px solid var(--border);
+}
+
+.mode-tab:hover {
+  background: #f8fafc;
+}
+
+.mode-tab.active {
+  background: linear-gradient(135deg, #8B5CF6, #3B82F6);
+  color: white;
+}
+
+/* Planning section */
+.planning-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.planning-label {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+/* Brainstorm area */
+.brainstorm-area {
+  background: #fef3c7;
+  border: 2px solid #fbbf24;
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.brainstorm-input {
+  background: white !important;
+  border-color: #fde68a !important;
+}
+
+.brainstorm-area .speech-input-btn {
+  margin-top: 8px;
+}
+
+/* VCOP Challenge section */
+.vcop-challenge {
+  background: #ede9fe;
+  border: 2px solid #c4b5fd;
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.vcop-challenge-row {
+  margin-bottom: 12px;
+}
+
+.vcop-challenge-row:last-child {
+  margin-bottom: 0;
+}
+
+.vcop-challenge-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6D28D9;
+  margin-bottom: 6px;
+}
+
+.vcop-challenge-inputs {
+  display: flex;
+  gap: 8px;
+}
+
+.vcop-challenge-input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  border: 2px solid #c4b5fd;
+  border-radius: var(--radius-sm);
+  background: white;
+  transition: border-color 0.2s;
+}
+
+.vcop-challenge-input:focus {
+  outline: none;
+  border-color: #8B5CF6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.vcop-challenge-select {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  border: 2px solid #c4b5fd;
+  border-radius: var(--radius-sm);
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.vcop-challenge-select:focus {
+  outline: none;
+  border-color: #8B5CF6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.plan-ready-btn {
+  background: linear-gradient(135deg, #10B981, #059669) !important;
+}
+
+/* Writing mode layout */
+.writing-mode-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Plan summary bar (collapsible, above writing) */
+.plan-summary-bar {
+  background: #faf5ff;
+  border: 2px solid #c4b5fd;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.plan-summary-post {
+  margin-top: 12px;
+}
+
+.plan-summary-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #6D28D9;
+  background: #ede9fe;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s;
+  gap: 8px;
+}
+
+.plan-summary-toggle:hover {
+  background: #ddd6fe;
+}
+
+.plan-summary-line {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-summary-arrow {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.plan-summary-detail {
+  padding: 12px 16px;
+}
+
+.plan-summary-item {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.plan-summary-item:last-child {
+  margin-bottom: 0;
+}
+
+.plan-summary-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #6D28D9;
+  margin-right: 6px;
+}
+
+.plan-summary-text {
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* Plan check annotation inline styles */
+.ann-plan-check {
+  color: #6D28D9;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: #c4b5fd;
+  text-underline-offset: 3px;
+}
+
+.ann-plan-achieved {
+  color: #16A34A;
+  text-decoration-color: #86efac;
+}
+
+/* Plan check feedback cards */
+.feedback-group-plan {
+  border-color: #c4b5fd;
+}
+
+.feedback-card-plan-achieved {
+  background: #f0fdf4 !important;
+  border-color: #86efac !important;
+}
+
+.feedback-card-plan-notyet {
+  background: #faf5ff !important;
+  border-color: #c4b5fd !important;
+}
+
 
 /* ========== AI Grading (Teacher Dashboard) ========== */
 .grading-section {

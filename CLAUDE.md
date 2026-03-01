@@ -12,6 +12,12 @@ Full classroom tool: teacher sets up sessions, students log in to write, AI give
 - 小學生友善：大字體、溫暖配色、鼓勵性語氣
 - **絕對不使用分數、等級、排名標籤來評價學生寫作**（不要 "Great"、"Good"、"Keep trying" 等）。回饋只包含兩部分：具體的好例子 + 一個具體的下一步建議。
 - **成就感驅動**：學生可以無限次修改，每次修改都會看到進步總結和里程碑鼓勵，讓學生自己想繼續改，不是被強迫改。
+- **VERIFY BEFORE DEPLOY**: Every code change must be self-verified before committing:
+  - API changes: run `curl` to test the endpoint locally, confirm JSON response format is valid
+  - Frontend changes: run `npm run build` to confirm no errors
+  - Prompt changes: test with a sample student text and verify the AI response matches expected format
+  - Never deploy code you haven't tested yourself
+- **CONTEXT MANAGEMENT**: After completing each major feature or task, remind the user to run /compact or start a new session. If you notice your own responses becoming inconsistent or you're forgetting earlier instructions, say "Context is getting heavy — recommend /compact or new session."
 
 ## 技術選擇
 - Vite + React + React Router（多頁路由）
@@ -252,6 +258,29 @@ studentProfiles/{studentId}
 - **核心原則**：先肯定學生的努力和改動，再看是否可以更好。永遠不忽略學生的嘗試。
 - 傳入 `previousAnnotations` = `iterations[0].annotations`（永遠與 v1 比對）
 
+### Planning Mode（寫作前計畫）
+- **兩種模式切換**：學生頁面提交前有兩個 tab — "Planning" 和 "Writing"，預設為 Planning
+- **Planning 頁面**：
+  - **Brainstorm 區塊**（黃色背景）：大文字框 + 語音輸入，提示「Tell me about your writing. Who is in it? Where does it happen? What goes wrong?」
+  - **Plan 區塊**（白色卡片）：Beginning / Middle / End 三個 textarea
+  - **VCOP Challenge 區塊**（紫色背景，optional）：
+    - 2 個 WOW word 輸入框
+    - Opener type 下拉選單（-ly, -ing, question, prepositional, -ed, short punchy）
+    - 1 個 connective 輸入框
+  - 「Ready to write →」按鈕切換到 Writing 模式
+- **Writing 模式**：如果學生有填寫計畫，右側顯示可折疊的 Plan sidebar（桌面端 260px 寬，手機端上方）
+- **提交後**：Plan sidebar 仍可展開查看（在 feedback 下方），修改模式也能看到
+- **Firestore 儲存**：v1 提交時 plan 物件存入 `submissions/{id}.plan`
+  ```json
+  { "brainstorm": "...", "beginning": "...", "middle": "...", "end": "...", "wowWords": ["magnificent"], "openerType": "-ly", "connective": "although" }
+  ```
+- **AI Plan vs Writing 比較**：
+  - 在 `buildVcopPrompt()` 中注入 `PLAN VS WRITING CHECK` section
+  - 檢查 wowWords、openerType、connective 是否出現在寫作中
+  - 輸出 `type: "plan_check"` annotations（`status: "achieved"` 或 `"not_yet"`）
+  - 顯示在 AnnotatedText 的分組卡片中（在 praise 之前），標題「📋 Your Plan Goals」
+- **不填計畫也能寫**：學生可以直接切換到 Writing tab 開始寫作，plan 相關功能不會影響
+
 ### Feedback Level Slider（難度級別，非數量）
 - Slider 在提交按鈕上方（提交前顯示，提交後隱藏），標籤「Feedback level」
 - 1-3 檔，預設 1
@@ -358,6 +387,7 @@ studentProfiles/{studentId}
 | `praise` | 做得好的地方 | | 綠色字 + VCOP pill badge |
 | `revision_good` | 修改後有進步（不要求完全匹配 AI 建議） | | 綠色字 + ✅ + AI 讚美訊息 |
 | `revision_attempted` | 嘗試修改但未明顯進步 | | 琥珀色字 + 🔄 + AI 鼓勵 + 指引 |
+| `plan_check` | 計畫目標達成檢查 | status: "achieved" / "not_yet" | 達成=綠色卡 ✅，未達=紫色卡 💡 |
 
 ## 環境變數
 ### 前端（.env.local，VITE_ prefix）

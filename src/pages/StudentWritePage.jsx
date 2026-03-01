@@ -10,6 +10,16 @@ import { getChangedWordIndices } from "../utils/wordDiff";
 
 const VCOP_DIM_LABELS = { V: "vocabulary upgrade", C: "connective improvement", O: "better opener", P: "punctuation fix" };
 
+const ISPACED_OPTIONS = [
+  { value: "", label: "Choose one..." },
+  { value: "-ly", label: "-ly (Adverb) — Silently, Carefully" },
+  { value: "-ing", label: "-Ing — Running, Trembling" },
+  { value: "question", label: "Question — Have you ever...?" },
+  { value: "prepositional", label: "Preposition — Under the, At midnight" },
+  { value: "-ed", label: "-Ed — Exhausted, Convinced" },
+  { value: "short punchy", label: "Short punchy — Stop. Listen." },
+];
+
 function getMilestone(count) {
   if (count >= 10) return { emoji: "⭐", text: "Writing superstar!" };
   if (count >= 5) return { emoji: "🔥", text: "On fire!" };
@@ -35,6 +45,14 @@ export default function StudentWritePage() {
   const [selectedVersion, setSelectedVersion] = useState(0);
   const [isRevising, setIsRevising] = useState(false);
   const [editText, setEditText] = useState("");
+
+  // Planning mode state
+  const [mode, setMode] = useState("planning"); // "planning" | "writing"
+  const [brainstormText, setBrainstormText] = useState("");
+  const [planWowWords, setPlanWowWords] = useState(["", ""]);
+  const [planOpenerType, setPlanOpenerType] = useState("");
+  const [planConnective, setPlanConnective] = useState("");
+  const [showPlanPanel, setShowPlanPanel] = useState(false); // collapsed by default
 
   const [pastSelectedVersions, setPastSelectedVersions] = useState({});
   const [broadcasts, setBroadcasts] = useState([]);
@@ -290,6 +308,7 @@ export default function StudentWritePage() {
     setTeacherComment(null);
 
     try {
+      const plan = buildPlanData();
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -297,6 +316,7 @@ export default function StudentWritePage() {
           text, sessionId: session.id, studentId: user.studentId,
           vcopFocus: session.vcopFocus, topic: session.topic,
           extraInstructions: session.extraInstructions, feedbackLevel, feedbackAmount,
+          plan,
         }),
       });
       console.log(`[SUBMIT] feedbackLevel=${feedbackLevel}, feedbackAmount=${feedbackAmount}`);
@@ -381,6 +401,23 @@ export default function StudentWritePage() {
     setText((prev) => (prev ? prev + " " + transcript : transcript));
   };
 
+  const handleBrainstormTranscript = (transcript) => {
+    setBrainstormText((prev) => (prev ? prev + " " + transcript : transcript));
+  };
+
+  // Build plan object for API/Firestore
+  const buildPlanData = () => {
+    const hasAnyPlan = brainstormText.trim() ||
+      planWowWords.some(w => w.trim()) || planOpenerType || planConnective.trim();
+    if (!hasAnyPlan) return null;
+    return {
+      brainstorm: brainstormText.trim(),
+      wowWords: planWowWords.map(w => w.trim()).filter(Boolean),
+      openerType: planOpenerType,
+      connective: planConnective.trim(),
+    };
+  };
+
   if (sessionLoading) {
     return (
       <div className="app">
@@ -394,6 +431,8 @@ export default function StudentWritePage() {
 
   const currentIteration = iterations[selectedVersion] || null;
   const hasSubmitted = iterations.length > 0;
+  const planData = buildPlanData();
+  const hasPlan = planData !== null;
 
   return (
     <div className={`app ${hasSubmitted ? "app-compact" : ""} ${isRevising ? "app-revising" : ""}`}>
@@ -426,9 +465,149 @@ export default function StudentWritePage() {
               </div>
             ))}
 
-            {/* Writing area — only show if no iterations yet */}
+            {/* Mode tabs — only before submission */}
             {iterations.length === 0 && (
-              <>
+              <div className="mode-tabs">
+                <button
+                  className={`mode-tab ${mode === "planning" ? "active" : ""}`}
+                  onClick={() => setMode("planning")}
+                >
+                  Planning
+                </button>
+                <button
+                  className={`mode-tab ${mode === "writing" ? "active" : ""}`}
+                  onClick={() => setMode("writing")}
+                >
+                  Writing
+                </button>
+              </div>
+            )}
+
+            {/* ===== PLANNING MODE ===== */}
+            {iterations.length === 0 && mode === "planning" && (
+              <div className="planning-section">
+                <div className="brainstorm-area">
+                  <label className="planning-label">Tell me about your writing. Who is in it? Where does it happen? What goes wrong?</label>
+                  <textarea
+                    className="writing-input brainstorm-input"
+                    placeholder="Brainstorm your ideas here... or tap the microphone to speak!"
+                    value={brainstormText}
+                    onChange={(e) => setBrainstormText(e.target.value)}
+                    rows={6}
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                  />
+                  <SpeechInput onTranscript={handleBrainstormTranscript} disabled={false} large />
+                </div>
+
+                <div className="vcop-challenge">
+                  <label className="planning-label">VCOP Challenge</label>
+                  <div className="vcop-challenge-row">
+                    <label className="vcop-challenge-label">WOW words I want to try:</label>
+                    <div className="vcop-challenge-inputs">
+                      <input
+                        type="text"
+                        className="vcop-challenge-input"
+                        placeholder="e.g. magnificent"
+                        value={planWowWords[0]}
+                        onChange={(e) => setPlanWowWords([e.target.value, planWowWords[1]])}
+                        spellCheck={false}
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                      />
+                      <input
+                        type="text"
+                        className="vcop-challenge-input"
+                        placeholder="e.g. trembling"
+                        value={planWowWords[1]}
+                        onChange={(e) => setPlanWowWords([planWowWords[0], e.target.value])}
+                        spellCheck={false}
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                      />
+                    </div>
+                  </div>
+                  <div className="vcop-challenge-row">
+                    <label className="vcop-challenge-label">Opener type I'll try:</label>
+                    <select
+                      className="vcop-challenge-select"
+                      value={planOpenerType}
+                      onChange={(e) => setPlanOpenerType(e.target.value)}
+                    >
+                      {ISPACED_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="vcop-challenge-row">
+                    <label className="vcop-challenge-label">A connective I haven't used before:</label>
+                    <input
+                      type="text"
+                      className="vcop-challenge-input"
+                      placeholder="e.g. although"
+                      value={planConnective}
+                      onChange={(e) => setPlanConnective(e.target.value)}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                    />
+                  </div>
+                </div>
+
+                <button className="analyze-button plan-ready-btn" onClick={() => setMode("writing")}>
+                  Ready to write →
+                </button>
+              </div>
+            )}
+
+            {/* ===== WRITING MODE — before submission ===== */}
+            {iterations.length === 0 && mode === "writing" && (
+              <div className="writing-mode-layout">
+                {/* Collapsible plan summary above writing */}
+                {hasPlan && (
+                  <div className={`plan-summary-bar ${showPlanPanel ? "plan-summary-open" : ""}`}>
+                    <button className="plan-summary-toggle" onClick={() => setShowPlanPanel(!showPlanPanel)}>
+                      <span className="plan-summary-line">
+                        📋 My Plan: {[
+                          planWowWords.filter(w => w.trim()).join(", "),
+                          planOpenerType ? `${planOpenerType} opener` : "",
+                          planConnective.trim(),
+                        ].filter(Boolean).join(" · ") || "brainstorm notes"}
+                      </span>
+                      <span className="plan-summary-arrow">{showPlanPanel ? "▲" : "▼"}</span>
+                    </button>
+                    {showPlanPanel && (
+                      <div className="plan-summary-detail">
+                        {brainstormText.trim() && (
+                          <div className="plan-summary-item">
+                            <span className="plan-summary-label">Brainstorm:</span>
+                            <span className="plan-summary-text">{brainstormText}</span>
+                          </div>
+                        )}
+                        {planWowWords.some(w => w.trim()) && (
+                          <div className="plan-summary-item">
+                            <span className="plan-summary-label">WOW words:</span>
+                            <span className="plan-summary-text">{planWowWords.filter(w => w.trim()).join(", ")}</span>
+                          </div>
+                        )}
+                        {planOpenerType && (
+                          <div className="plan-summary-item">
+                            <span className="plan-summary-label">Opener:</span>
+                            <span className="plan-summary-text">{planOpenerType}</span>
+                          </div>
+                        )}
+                        {planConnective.trim() && (
+                          <div className="plan-summary-item">
+                            <span className="plan-summary-label">Connective:</span>
+                            <span className="plan-summary-text">{planConnective}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="writing-area">
                   <textarea
                     className="writing-input"
@@ -466,7 +645,7 @@ export default function StudentWritePage() {
                     <span className="button-loading"><span className="spinner" />Analysing...</span>
                   ) : "Submit My Writing ✨"}
                 </button>
-              </>
+              </div>
             )}
 
             {loading && (
@@ -648,6 +827,50 @@ export default function StudentWritePage() {
               </div>
             )}
 
+            {/* Plan summary after submission (collapsible reference) */}
+            {hasSubmitted && hasPlan && (
+              <div className={`plan-summary-bar plan-summary-post ${showPlanPanel ? "plan-summary-open" : ""}`}>
+                <button className="plan-summary-toggle" onClick={() => setShowPlanPanel(!showPlanPanel)}>
+                  <span className="plan-summary-line">
+                    📋 My Plan: {[
+                      planWowWords.filter(w => w.trim()).join(", "),
+                      planOpenerType ? `${planOpenerType} opener` : "",
+                      planConnective.trim(),
+                    ].filter(Boolean).join(" · ") || "brainstorm notes"}
+                  </span>
+                  <span className="plan-summary-arrow">{showPlanPanel ? "▲" : "▼"}</span>
+                </button>
+                {showPlanPanel && (
+                  <div className="plan-summary-detail">
+                    {brainstormText.trim() && (
+                      <div className="plan-summary-item">
+                        <span className="plan-summary-label">Brainstorm:</span>
+                        <span className="plan-summary-text">{brainstormText}</span>
+                      </div>
+                    )}
+                    {planWowWords.some(w => w.trim()) && (
+                      <div className="plan-summary-item">
+                        <span className="plan-summary-label">WOW words:</span>
+                        <span className="plan-summary-text">{planWowWords.filter(w => w.trim()).join(", ")}</span>
+                      </div>
+                    )}
+                    {planOpenerType && (
+                      <div className="plan-summary-item">
+                        <span className="plan-summary-label">Opener:</span>
+                        <span className="plan-summary-text">{planOpenerType}</span>
+                      </div>
+                    )}
+                    {planConnective.trim() && (
+                      <div className="plan-summary-item">
+                        <span className="plan-summary-label">Connective:</span>
+                        <span className="plan-summary-text">{planConnective}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {teacherComment && (
               <div className="teacher-comment">
                 <h3>Your teacher says:</h3>
@@ -657,55 +880,53 @@ export default function StudentWritePage() {
           </>
         )}
 
-        {/* Student Feedback Survey — hidden by default, small button to expand */}
-        {session && (
-          <>
-            {feedbackAlreadyDone || feedbackSubmitted ? (
-              <div className="student-feedback-section">
-                <div className="feedback-submitted">Thanks for your feedback! 🙏</div>
-              </div>
-            ) : !showFeedbackForm ? (
-              <div className="feedback-toggle-wrapper">
-                <button className="feedback-toggle-btn" onClick={() => setShowFeedbackForm(true)}>
-                  Give feedback 📝
+        {/* Student Feedback Survey — always available, hidden by default */}
+        {session && !feedbackAlreadyDone && !feedbackSubmitted && !showFeedbackForm && (
+          <div className="feedback-toggle-wrapper">
+            <button className="feedback-toggle-btn" onClick={() => setShowFeedbackForm(true)}>
+              Give feedback 📝
+            </button>
+          </div>
+        )}
+        {(feedbackAlreadyDone || feedbackSubmitted) && (
+          <div className="student-feedback-section">
+            <div className="feedback-submitted">Thanks for your feedback! 🙏</div>
+          </div>
+        )}
+        {session && showFeedbackForm && !feedbackAlreadyDone && !feedbackSubmitted && (
+          <div className="student-feedback-section">
+            <h3>How was today's session?</h3>
+            <div className="mood-selector">
+              {[
+                { value: 1, emoji: "😫" }, { value: 2, emoji: "😕" },
+                { value: 3, emoji: "😐" }, { value: 4, emoji: "🙂" }, { value: 5, emoji: "🤩" },
+              ].map((m) => (
+                <button key={m.value} className={`mood-btn ${feedbackMood === m.value ? "active" : ""}`} onClick={() => setFeedbackMood(m.value)}>
+                  {m.emoji}
                 </button>
-              </div>
-            ) : (
-              <div className="student-feedback-section">
-                <h3>How was today's session?</h3>
-                <div className="mood-selector">
-                  {[
-                    { value: 1, emoji: "😫" }, { value: 2, emoji: "😕" },
-                    { value: 3, emoji: "😐" }, { value: 4, emoji: "🙂" }, { value: 5, emoji: "🤩" },
-                  ].map((m) => (
-                    <button key={m.value} className={`mood-btn ${feedbackMood === m.value ? "active" : ""}`} onClick={() => setFeedbackMood(m.value)}>
-                      {m.emoji}
-                    </button>
-                  ))}
-                </div>
-                <label className="feedback-question">What helped you most?</label>
-                <div className="multi-choice-group">
-                  {["AI feedback", "Seeing my old writing", "Speech input"].map((opt) => (
-                    <button key={opt} className={`choice-chip ${feedbackHelped.includes(opt) ? "active" : ""}`} onClick={() => toggleFeedbackChoice(feedbackHelped, setFeedbackHelped, opt)}>
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-                <label className="feedback-question">What was difficult?</label>
-                <div className="multi-choice-group">
-                  {["Understanding the feedback", "Knowing how to improve", "The app was confusing", "Nothing, it was easy"].map((opt) => (
-                    <button key={opt} className={`choice-chip ${feedbackDifficult.includes(opt) ? "active" : ""}`} onClick={() => toggleFeedbackChoice(feedbackDifficult, setFeedbackDifficult, opt)}>
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-                <textarea className="writing-input" placeholder="Anything else you want to say? (optional)" value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} rows={2} spellCheck={false} autoCorrect="off" autoCapitalize="off" />
-                <button className="analyze-button" onClick={handleSubmitFeedback} disabled={!feedbackMood} style={{ marginTop: 12, marginBottom: 0 }}>
-                  Submit Feedback
+              ))}
+            </div>
+            <label className="feedback-question">What helped you most?</label>
+            <div className="multi-choice-group">
+              {["AI feedback", "Seeing my old writing", "Speech input"].map((opt) => (
+                <button key={opt} className={`choice-chip ${feedbackHelped.includes(opt) ? "active" : ""}`} onClick={() => toggleFeedbackChoice(feedbackHelped, setFeedbackHelped, opt)}>
+                  {opt}
                 </button>
-              </div>
-            )}
-          </>
+              ))}
+            </div>
+            <label className="feedback-question">What was difficult?</label>
+            <div className="multi-choice-group">
+              {["Understanding the feedback", "Knowing how to improve", "The app was confusing", "Nothing, it was easy"].map((opt) => (
+                <button key={opt} className={`choice-chip ${feedbackDifficult.includes(opt) ? "active" : ""}`} onClick={() => toggleFeedbackChoice(feedbackDifficult, setFeedbackDifficult, opt)}>
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <textarea className="writing-input" placeholder="Anything else you want to say? (optional)" value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} rows={2} spellCheck={false} autoCorrect="off" autoCapitalize="off" />
+            <button className="analyze-button" onClick={handleSubmitFeedback} disabled={!feedbackMood} style={{ marginTop: 12, marginBottom: 0 }}>
+              Submit Feedback
+            </button>
+          </div>
         )}
 
         {/* Past Work Section */}

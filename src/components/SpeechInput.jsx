@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 
-export default function SpeechInput({ onTranscript, disabled }) {
+export default function SpeechInput({ onTranscript, disabled, large }) {
   const [recording, setRecording] = useState(false);
   const recognitionRef = useRef(null);
 
@@ -41,7 +41,7 @@ export default function SpeechInput({ onTranscript, disabled }) {
   return (
     <button
       type="button"
-      className={`speech-button ${recording ? "recording" : ""}`}
+      className={`speech-button ${recording ? "recording" : ""}${large ? " speech-button-large" : ""}`}
       onClick={toggle}
       disabled={disabled}
       title={recording ? "Stop recording" : "Start voice input"}
