@@ -21,9 +21,10 @@ const ISPACED_OPTIONS = [
 ];
 
 function getMilestone(count) {
-  if (count >= 10) return { emoji: "⭐", text: "Writing superstar!" };
-  if (count >= 5) return { emoji: "🔥", text: "On fire!" };
-  if (count >= 3) return { emoji: "💪", text: "Nice start!" };
+  if (count >= 7) return { emoji: "🏆", text: "Writing superstar!" };
+  if (count >= 5) return { emoji: "⭐", text: "Amazing progress!" };
+  if (count >= 3) return { emoji: "🔥", text: "You're on a roll!" };
+  if (count >= 1) return { emoji: "👍", text: "Great start!" };
   return null;
 }
 
@@ -112,61 +113,34 @@ export default function StudentWritePage() {
   const progressStats = useMemo(() => {
     if (iterations.length < 2) return null;
 
-    // Denominator: issues from v1 only (fixed, never changes)
-    const v1Annotations = iterations[0].annotations || [];
-    const v1Issues = v1Annotations.filter((a) => a.type === "spelling" || a.type === "grammar" || a.type === "suggestion");
-    const totalIssues = v1Issues.length;
-
-    // Use the LATEST revision to count which v1 issues are now fixed or attempted.
+    // Count improvements the student actually sees (all revision_good annotations)
     const latestAnns = iterations[iterations.length - 1].annotations || [];
     const latestGood = latestAnns.filter((a) => a.type === "revision_good");
     const latestAttempted = latestAnns.filter((a) => a.type === "revision_attempted");
 
-    // Track which v1 issues have been fixed (by index, to avoid double-counting)
-    const fixedV1Indices = new Set();
-    const attemptedV1Indices = new Set();
-    const fixedByDim = {};
-    let spellingFixes = 0;
-    let grammarFixes = 0;
-
-    const matchV1Issue = (ann, excludeSet) => {
-      return v1Issues.findIndex((o, i) => {
-        if (excludeSet.has(i)) return false;
-        return (
-          o.phrase.toLowerCase() === (ann.originalPhrase || "").toLowerCase() ||
-          o.phrase.toLowerCase() === ann.phrase.toLowerCase() ||
-          (o.suggestion && o.suggestion.toLowerCase().includes(ann.phrase.toLowerCase()))
-        );
-      });
-    };
-
-    for (const good of latestGood) {
-      const idx = matchV1Issue(good, fixedV1Indices);
-      if (idx !== -1) {
-        fixedV1Indices.add(idx);
-        const original = v1Issues[idx];
-        if (original.type === "spelling") {
-          spellingFixes++;
-        } else if (original.type === "grammar") {
-          grammarFixes++;
-        } else if (original.dimension) {
-          fixedByDim[original.dimension] = (fixedByDim[original.dimension] || 0) + 1;
-        }
-      }
-    }
-
-    for (const att of latestAttempted) {
-      const idx = matchV1Issue(att, new Set([...fixedV1Indices, ...attemptedV1Indices]));
-      if (idx !== -1) attemptedV1Indices.add(idx);
-    }
-
-    const totalFixed = Math.min(fixedV1Indices.size, totalIssues);
-    const totalAttempted = Math.min(attemptedV1Indices.size, totalIssues - totalFixed);
+    const totalFixed = latestGood.length;
+    const totalAttempted = latestAttempted.length;
 
     // This round: compare latest vs previous iteration
+    const v1Annotations = iterations[0].annotations || [];
     const prevAnns = iterations.length >= 3 ? iterations[iterations.length - 2].annotations || [] : v1Annotations;
     const prevGoodCount = prevAnns.filter((a) => a.type === "revision_good").length;
     const thisRoundFixed = Math.max(0, latestGood.length - prevGoodCount);
+
+    // Breakdown by category
+    const fixedByDim = {};
+    let spellingFixes = 0;
+    let grammarFixes = 0;
+    for (const good of latestGood) {
+      const origType = good.originalType;
+      if (origType === "spelling") {
+        spellingFixes++;
+      } else if (origType === "grammar") {
+        grammarFixes++;
+      } else if (good.dimension) {
+        fixedByDim[good.dimension] = (fixedByDim[good.dimension] || 0) + 1;
+      }
+    }
 
     const breakdown = [];
     for (const [dim, count] of Object.entries(fixedByDim)) {
@@ -184,7 +158,6 @@ export default function StudentWritePage() {
     return {
       totalFixed,
       totalAttempted,
-      totalIssues,
       thisRoundFixed,
       breakdown,
       milestone,
@@ -676,36 +649,25 @@ export default function StudentWritePage() {
 
                 <h2 className="progress-summary-title">
                   {progressStats.totalFixed > 0
-                    ? `Version ${progressStats.version} — You've made ${progressStats.totalFixed} improvement${progressStats.totalFixed !== 1 ? "s" : ""} so far! 🎉`
-                    : `Version ${progressStats.version} — Keep going! Try clicking on the suggestions to see what to change.`}
+                    ? `You've made ${progressStats.totalFixed} improvement${progressStats.totalFixed !== 1 ? "s" : ""}! 🎉`
+                    : "Keep going! Try clicking on the suggestions to see what to change."}
                 </h2>
 
                 {progressStats.thisRoundFixed > 0 && (
                   <div className="progress-this-round">
-                    ✅ Fixed {progressStats.thisRoundFixed} thing{progressStats.thisRoundFixed !== 1 ? "s" : ""} this round!
+                    {progressStats.thisRoundFixed >= 3
+                      ? `✅ Wow! You improved ${progressStats.thisRoundFixed} things this round!`
+                      : "✅ Nice! You improved something this round!"}
                   </div>
                 )}
 
-                {progressStats.totalIssues > 0 && (
+                {progressStats.totalFixed > 0 && (
                   <div className="improvement-progress">
-                    <div className="improvement-progress-label">
-                      {progressStats.totalFixed} / {progressStats.totalIssues} improved
-                      {progressStats.totalAttempted > 0 && ` · ${progressStats.totalAttempted} almost there`}
-                    </div>
                     <div className="improvement-progress-track">
                       <div
                         className="improvement-progress-fill"
-                        style={{ width: `${Math.min(100, Math.round((progressStats.totalFixed / progressStats.totalIssues) * 100))}%` }}
+                        style={{ width: `${Math.min(100, progressStats.totalFixed * 14)}%` }}
                       />
-                      {progressStats.totalAttempted > 0 && (
-                        <div
-                          className="improvement-progress-attempted"
-                          style={{
-                            width: `${Math.min(100 - Math.round((progressStats.totalFixed / progressStats.totalIssues) * 100), Math.round((progressStats.totalAttempted / progressStats.totalIssues) * 100))}%`,
-                            left: `${Math.round((progressStats.totalFixed / progressStats.totalIssues) * 100)}%`,
-                          }}
-                        />
-                      )}
                     </div>
                   </div>
                 )}
