@@ -5,6 +5,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   onSnapshot,
   getDocs,
   updateDoc,
@@ -17,6 +18,7 @@ import {
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import AnnotatedText from "../components/AnnotatedText";
+import { getChangedWordIndices } from "../utils/wordDiff";
 
 const YEAR_GROUP_MAP = {
   "19": "Y6",
@@ -47,30 +49,89 @@ export default function TeacherDashboardPage() {
   // Track selected version per submission
   const [selectedVersions, setSelectedVersions] = useState({});
 
-  // Dashboard tab
-  const [dashboardTab, setDashboardTab] = useState("dashboard");
-
-  // Feedback data
-  const [feedbackDocs, setFeedbackDocs] = useState([]);
-
   // Broadcast state
   const [broadcastText, setBroadcastText] = useState("");
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [broadcastGrammarNote, setBroadcastGrammarNote] = useState(null);
   const [sentBroadcasts, setSentBroadcasts] = useState([]);
+  const [showBroadcast, setShowBroadcast] = useState(false);
 
   // AI Grading per submission
   const [grades, setGrades] = useState({});
   const [gradingId, setGradingId] = useState(null);
 
+  // Coach draft grades (keyed by `coach-{draftId}-{checkIdx}`)
+  const [coachGrades, setCoachGrades] = useState({});
+  const [coachGradingKey, setCoachGradingKey] = useState(null);
+
+  const handleCoachGrade = async (draftId, checkIdx, text, studentId) => {
+    const key = `coach-${draftId}-${checkIdx}`;
+    if (coachGrades[key] || !text?.trim()) return;
+    setCoachGradingKey(key);
+    try {
+      const res = await fetch("/api/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, studentId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCoachGrades((prev) => ({ ...prev, [key]: data }));
+      }
+    } catch (err) { console.error("Coach grade error:", err); }
+    setCoachGradingKey(null);
+  };
+
+  // Level-up rewrites for coach drafts (keyed by draftId)
+  const [levelUpResults, setLevelUpResults] = useState({});
+  const [levelUpLoading, setLevelUpLoading] = useState(null); // "draftId-level"
+
+  const handleLevelUp = async (draftId, text, studentId, level, currentLevel) => {
+    const key = `${draftId}-${level}`;
+    if (levelUpResults[key] || !text?.trim()) return;
+    setLevelUpLoading(key);
+    try {
+      // 從 currentLevel 提取數字（如 "Y1" → 1），直接傳 baseYear 給 API
+      let baseYear = null;
+      if (currentLevel) {
+        const m = currentLevel.match(/\d+/);
+        if (m) baseYear = parseInt(m[0], 10);
+      }
+      const res = await fetch("/api/coach-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "levelup", text, studentId, levelUp: level, currentLevel, baseYear }),
+      });
+      const data = await res.json();
+      if (res.ok && data.rewrite) {
+        setLevelUpResults((prev) => ({ ...prev, [key]: data }));
+      } else {
+        console.error("Level-up failed:", data);
+        setLevelUpResults((prev) => ({ ...prev, [key]: { rewrite: "Error: " + (data.error || "Failed to generate"), changes: "", targetYear: `+${level}` } }));
+      }
+    } catch (err) {
+      console.error("Level-up error:", err);
+      setLevelUpResults((prev) => ({ ...prev, [key]: { rewrite: "Error: Network error", changes: "", targetYear: `+${level}` } }));
+    }
+    setLevelUpLoading(null);
+  };
+
   // Raw text toggle per submission
   const [showRawText, setShowRawText] = useState({});
   const [copiedId, setCopiedId] = useState(null);
 
-  // Class Overview
-  const [studentProfiles, setStudentProfiles] = useState([]);
-  const [profilesLoading, setProfilesLoading] = useState(false);
+  // Live drafts
+  const [drafts, setDrafts] = useState([]);
+
+  // Student filter for activity feed
+  const [filterStudent, setFilterStudent] = useState(null);
+
+  // New session inline form
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [newTopic, setNewTopic] = useState("");
+  const [newTargetYear, setNewTargetYear] = useState("");
+  const [creatingSession, setCreatingSession] = useState(false);
 
   // Fetch all sessions, default to active
   useEffect(() => {
@@ -82,12 +143,8 @@ export default function TeacherDashboardPage() {
       .then((snap) => {
         const sessions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setAllSessions(sessions);
-        const active = sessions.find((s) => s.active);
-        if (active) {
-          setSession(active);
-        } else if (sessions.length > 0) {
-          setSession(sessions[0]);
-        }
+        // Default to "All Sessions" view
+        setSession({ id: "__all__", topic: "All Sessions" });
       })
       .catch((err) => console.error("Session fetch error:", err))
       .finally(() => setSessionLoading(false));
@@ -104,14 +161,14 @@ export default function TeacherDashboardPage() {
       .catch((err) => console.error("Students fetch error:", err));
   }, []);
 
-  // Real-time submissions for selected session
+  // Real-time submissions — all or per session
   useEffect(() => {
     if (!session) return;
 
-    const q = query(
-      collection(db, "submissions"),
-      where("sessionId", "==", session.id)
-    );
+    const isAll = session.id === "__all__";
+    const q = isAll
+      ? query(collection(db, "submissions"), orderBy("createdAt", "desc"), limit(50))
+      : query(collection(db, "submissions"), where("sessionId", "==", session.id));
 
     const unsub = onSnapshot(
       q,
@@ -153,48 +210,40 @@ export default function TeacherDashboardPage() {
     return unsub;
   }, [session]);
 
-  // Real-time feedback for selected session
+  // Real-time drafts — all or per session
   useEffect(() => {
     if (!session) return;
-    const q = query(
-      collection(db, "feedback"),
-      where("sessionId", "==", session.id)
-    );
+    const isAll = session.id === "__all__";
+    const q = isAll
+      ? query(collection(db, "drafts"))
+      : query(collection(db, "drafts"), where("sessionId", "==", session.id));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setFeedbackDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setDrafts(docs);
       },
-      (err) => console.error("Feedback snapshot error:", err)
+      (err) => console.error("Drafts snapshot error:", err)
     );
     return unsub;
   }, [session]);
 
-  // Fetch student profiles when Class Overview tab is selected
-  useEffect(() => {
-    if (dashboardTab !== "overview") return;
-    setProfilesLoading(true);
-    getDocs(collection(db, "studentProfiles"))
-      .then((snap) => {
-        setStudentProfiles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      })
-      .catch((err) => console.error("Student profiles fetch error:", err))
-      .finally(() => setProfilesLoading(false));
-  }, [dashboardTab]);
-
   const submittedStudentIds = new Set(submissions.map((s) => s.studentId));
-  const submittedCount = submittedStudentIds.size;
-  const totalStudents = students.length;
+
+  // Build a map of studentId -> draft for quick lookup
+  const draftsByStudent = {};
+  for (const d of drafts) {
+    draftsByStudent[d.studentId] = d;
+  }
 
   // Fetch grade for ALL versions of a submission
   const handleFetchGrade = async (sub) => {
     const subId = sub.id;
-    if (grades[subId]) return; // Already graded
+    if (grades[subId]) return;
     setGradingId(subId);
 
     const iters = sub.iterations || [];
     if (iters.length === 0) {
-      // Old format fallback
       const text = sub.text || "";
       if (!text.trim()) { setGradingId(null); return; }
       try {
@@ -212,7 +261,6 @@ export default function TeacherDashboardPage() {
       return;
     }
 
-    // Grade each version in parallel
     try {
       const results = await Promise.all(
         iters.map(async (iter) => {
@@ -261,7 +309,6 @@ export default function TeacherDashboardPage() {
     setGrammarNote(null);
 
     try {
-      // Grammar check via API
       let finalComment = comment;
       let hasChanges = false;
       try {
@@ -317,12 +364,16 @@ export default function TeacherDashboardPage() {
   };
 
   const handleSessionChange = (e) => {
-    const selected = allSessions.find((s) => s.id === e.target.value);
-    if (selected) {
-      setSession(selected);
-      setExpandedId(null);
-      setGrammarNote(null);
+    const val = e.target.value;
+    if (val === "__all__") {
+      setSession({ id: "__all__", topic: "All Sessions" });
+    } else {
+      const selected = allSessions.find((s) => s.id === val);
+      if (selected) setSession(selected);
     }
+    setExpandedId(null);
+    setGrammarNote(null);
+    setFilterStudent(null);
   };
 
   const handleToggleStudent = (studentId) => {
@@ -402,11 +453,44 @@ export default function TeacherDashboardPage() {
     }
   };
 
+  const handleCreateSession = async () => {
+    if (!newTopic.trim()) return;
+    setCreatingSession(true);
+    try {
+      // 將其他 active session 設為 inactive
+      for (const s of allSessions.filter((s) => s.active)) {
+        await updateDoc(doc(db, "sessions", s.id), { active: false });
+      }
+      const docRef = await addDoc(collection(db, "sessions"), {
+        topic: newTopic.trim(),
+        targetYear: newTargetYear || null,
+        vcopFocus: ["V", "C", "O", "P", "spelling", "grammar"],
+        active: true,
+        createdAt: serverTimestamp(),
+      });
+      // 重新載入 sessions
+      const snap = await getDocs(query(collection(db, "sessions"), orderBy("createdAt", "desc")));
+      const sessions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setAllSessions(sessions);
+      const newSession = sessions.find((s) => s.id === docRef.id);
+      if (newSession) setSession(newSession);
+      setNewTopic("");
+      setNewTargetYear("");
+      setShowNewSession(false);
+    } catch (err) {
+      console.error("Failed to create session:", err);
+      alert("Failed to create session.");
+    } finally {
+      setCreatingSession(false);
+    }
+  };
+
   const formatSessionLabel = (s) => {
     const date = s.createdAt?.toDate
       ? s.createdAt.toDate().toLocaleDateString("en-GB", { day: "numeric", month: "short" })
       : "";
-    return `${s.topic || "Untitled"}${date ? ` — ${date}` : ""}${s.active ? " ●" : ""}`;
+    const year = s.targetYear ? `[${s.targetYear}] ` : "";
+    return `${year}${s.topic || "Untitled"}${date ? ` — ${date}` : ""}${s.active ? " ● Active" : ""}`;
   };
 
   const formatTime = (ts) => {
@@ -418,11 +502,94 @@ export default function TeacherDashboardPage() {
     });
   };
 
+  const formatTimeAgo = (ts) => {
+    if (!ts) return "";
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const secs = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (secs < 60) return "just now";
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    return `${Math.floor(secs / 86400)}d ago`;
+  };
+
+  const modeLabel = (mode) => {
+    if (mode === "livecoach") return "Live Coach";
+    if (mode === "writing") return "Writing";
+    if (mode === "planning") return "Planning";
+    return mode || "Writing";
+  };
+
+  const modeBadgeClass = (mode) => {
+    if (mode === "livecoach") return "feed-mode-livecoach";
+    if (mode === "planning") return "feed-mode-planning";
+    return "feed-mode-writing";
+  };
+
+  // ===== Build unified activity feed =====
+  // Merge drafts (status=drafting) and submissions (status=submitted) into one list
+  const buildActivityFeed = () => {
+    const items = [];
+
+    // Add drafts as "drafting" items
+    for (const d of drafts) {
+      const previewText = d.mode === "livecoach"
+        ? (d.coachText || d.text || "")
+        : (d.text || "");
+      items.push({
+        type: "draft",
+        id: `draft-${d.id}`,
+        rawId: d.id,
+        studentId: d.studentId,
+        mode: d.mode || "writing",
+        status: "drafting",
+        time: d.lastUpdated,
+        previewText,
+        draft: d,
+      });
+    }
+
+    // Add submissions as "submitted" items
+    for (const sub of submissions) {
+      const hasIterations = sub.iterations && sub.iterations.length > 0;
+      const latestText = hasIterations
+        ? sub.iterations[sub.iterations.length - 1]?.text || ""
+        : sub.text || "";
+      items.push({
+        type: "submission",
+        id: `sub-${sub.id}`,
+        rawId: sub.id,
+        studentId: sub.studentId,
+        mode: sub.feedbackMode || "writing",
+        status: "submitted",
+        time: sub.createdAt,
+        previewText: latestText,
+        submission: sub,
+        iterationCount: hasIterations ? sub.iterations.length : 1,
+      });
+    }
+
+    // Sort by time, most recent first
+    items.sort((a, b) => {
+      const ta = a.time?.toMillis?.() || a.time?.seconds * 1000 || 0;
+      const tb = b.time?.toMillis?.() || b.time?.seconds * 1000 || 0;
+      return tb - ta;
+    });
+
+    // Filter by student if active
+    if (filterStudent) {
+      return items.filter((item) => item.studentId === filterStudent);
+    }
+
+    return items;
+  };
+
+  const activityFeed = session ? buildActivityFeed() : [];
+
   if (sessionLoading) {
     return (
       <div className="app">
         <header className="app-header">
-          <h1>Silvermine Bay School VCOP Coach ✏️</h1>
+          <h1>Silvermine Bay School VCOP Coach</h1>
           <p className="subtitle">Loading...</p>
         </header>
       </div>
@@ -430,287 +597,285 @@ export default function TeacherDashboardPage() {
   }
 
   return (
-    <div className="app teacher-dashboard">
-      <header className="app-header">
-        <div className="page-header">
-          <h1>Silvermine Bay School VCOP Coach ✏️</h1>
-          <button className="logout-button" onClick={handleLogout}>
-            Log out
-          </button>
-        </div>
-        <p className="subtitle">Teacher Dashboard</p>
-      </header>
-
-      <main className="app-main">
-        <nav className="teacher-nav">
-          <button
-            className="teacher-nav-btn"
-            onClick={() => navigate("/teacher/setup")}
-          >
-            ← Setup
-          </button>
-          <button
-            className={`teacher-nav-btn ${dashboardTab === "dashboard" ? "active" : ""}`}
-            onClick={() => setDashboardTab("dashboard")}
-          >
-            Dashboard
-          </button>
-          <button
-            className={`teacher-nav-btn ${dashboardTab === "feedback" ? "active" : ""}`}
-            onClick={() => setDashboardTab("feedback")}
-          >
-            Feedback
-          </button>
-          <button
-            className={`teacher-nav-btn ${dashboardTab === "overview" ? "active" : ""}`}
-            onClick={() => setDashboardTab("overview")}
-          >
-            Class Overview
-          </button>
-        </nav>
-
-        {allSessions.length === 0 ? (
-          <div className="no-session">
-            <p>No sessions found.</p>
+    <div className="app td-dashboard">
+      {/* Header */}
+      <header className="td-header">
+        <div className="td-header-row">
+          <h1 className="td-title">VCOP Coach</h1>
+          <div className="td-header-actions">
             <button
-              className="analyze-button"
-              style={{ marginTop: 16, maxWidth: 300 }}
-              onClick={() => navigate("/teacher/setup")}
+              className="td-icon-btn"
+              onClick={() => setShowBroadcast(!showBroadcast)}
+              title="Broadcast to students"
             >
-              Create a Session
+              📢
+            </button>
+            <button
+              className="td-icon-btn"
+              onClick={() => navigate("/teacher/setup")}
+              title="Session setup"
+            >
+              ⚙️
+            </button>
+            <button className="logout-button" onClick={handleLogout}>
+              Log out
             </button>
           </div>
-        ) : (
-          <>
-            {/* Session selector */}
-            <div className="session-selector-wrapper">
+        </div>
+      </header>
+
+      <main>
+        {/* Session selector */}
+        <div className="td-session-bar">
+          {allSessions.length > 0 ? (
+            <div className="td-session-select-row">
               <select
-                className="session-selector"
+                className="td-session-select"
                 value={session?.id || ""}
                 onChange={handleSessionChange}
               >
+                <option value="__all__">All Sessions — Recent Activity</option>
                 {allSessions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {formatSessionLabel(s)}
                   </option>
                 ))}
               </select>
+              <button
+                className="td-new-session-btn"
+                onClick={() => setShowNewSession(!showNewSession)}
+              >
+                {showNewSession ? "Cancel" : "+ New"}
+              </button>
             </div>
+          ) : (
+            <div className="td-no-session">
+              <p>No sessions yet.</p>
+              <button
+                className="td-new-session-btn"
+                onClick={() => setShowNewSession(true)}
+              >
+                + New Session
+              </button>
+            </div>
+          )}
 
-            {dashboardTab === "dashboard" && (
-              <>
-                {/* Session info */}
-                <div className="session-info">
-                  <div className="session-topic">
-                    Topic: {session.topic}
-                  </div>
-                  <div className="session-focus">
-                    {(session.vcopFocus || ["V", "C", "O", "P", "spelling", "grammar"]).map((d) => {
-                      const colors = {
-                        V: "#8B5CF6",
-                        C: "#3B82F6",
-                        O: "#10B981",
-                        P: "#F59E0B",
-                        spelling: "#DC2626",
-                        grammar: "#92400e",
-                      };
-                      const labels = {
-                        V: "Vocabulary",
-                        C: "Connectives",
-                        O: "Openers",
-                        P: "Punctuation",
-                        spelling: "Spelling",
-                        grammar: "Grammar",
-                      };
-                      return (
-                        <span
-                          key={d}
-                          className="focus-tag"
-                          style={{ background: colors[d] }}
-                        >
-                          {labels[d]}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
+          {/* Inline new session form */}
+          {showNewSession && (
+            <div className="td-new-session-form">
+              <input
+                className="td-new-session-input"
+                type="text"
+                placeholder="Topic (e.g. Describe your favourite place)"
+                value={newTopic}
+                onChange={(e) => setNewTopic(e.target.value)}
+                spellCheck={false}
+                autoCorrect="off"
+              />
+              <select
+                className="td-new-session-year"
+                value={newTargetYear}
+                onChange={(e) => setNewTargetYear(e.target.value)}
+              >
+                <option value="">All years</option>
+                <option value="Y4">Y4</option>
+                <option value="Y5">Y5</option>
+                <option value="Y6">Y6</option>
+              </select>
+              <button
+                className="td-create-btn"
+                onClick={handleCreateSession}
+                disabled={creatingSession || !newTopic.trim()}
+              >
+                {creatingSession ? "Creating..." : "Start"}
+              </button>
+            </div>
+          )}
+        </div>
 
-                {/* Progress bar */}
-                <div className="progress-section">
-                  <div className="progress-label">
-                    <strong>{submittedCount}</strong> / {totalStudents} submitted
-                  </div>
-                  <div className="progress-bar-track">
-                    <div
-                      className="progress-bar-fill"
-                      style={{
-                        width:
-                          totalStudents > 0
-                            ? `${(submittedCount / totalStudents) * 100}%`
-                            : "0%",
-                      }}
-                    />
-                  </div>
-                </div>
+        {/* Active session topic display — hide for "All" */}
+        {session && session.id !== "__all__" && (
+          <div className="td-active-topic">
+            <span className="td-topic-label">Topic:</span>
+            <span className="td-topic-text">{session.topic}</span>
+            {session.active && <span className="td-active-dot" />}
+          </div>
+        )}
 
-                {/* Student status grid */}
-                <div className="student-grid">
-                  {students.map((s) => (
-                    <span
-                      key={s.id}
-                      className={`student-chip ${submittedStudentIds.has(s.id) ? "submitted" : ""}`}
-                    >
-                      {s.name || s.id}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Broadcast section */}
-                <div className="broadcast-section">
-                  <h3>Broadcast to Students 📢</h3>
-
-                  <div className="broadcast-student-grid">
-                    {students.map((s) => (
-                      <label
-                        key={s.id}
-                        className={`broadcast-check-label ${selectedStudentIds.has(s.id) ? "checked" : ""}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedStudentIds.has(s.id)}
-                          onChange={() => handleToggleStudent(s.id)}
-                        />
-                        {s.name || s.id}
-                      </label>
-                    ))}
-                  </div>
-
-                  <button className="broadcast-select-all" onClick={handleToggleAll}>
-                    {selectedStudentIds.size === students.length ? "Deselect All" : "Select All"}
-                  </button>
-
-                  <textarea
-                    placeholder="Type a message to broadcast..."
-                    value={broadcastText}
-                    onChange={(e) => setBroadcastText(e.target.value)}
-                    rows={2}
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="off"
+        {/* Broadcast panel (toggled) */}
+        {showBroadcast && session && (
+          <div className="td-broadcast-panel">
+            <div className="td-broadcast-header">
+              <h3>Broadcast to Students</h3>
+              <button className="td-close-btn" onClick={() => setShowBroadcast(false)}>×</button>
+            </div>
+            <div className="broadcast-student-grid">
+              {students.map((s) => (
+                <label
+                  key={s.id}
+                  className={`broadcast-check-label ${selectedStudentIds.has(s.id) ? "checked" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedStudentIds.has(s.id)}
+                    onChange={() => handleToggleStudent(s.id)}
                   />
-
-                  <button
-                    className="broadcast-send-btn"
-                    onClick={handleSendBroadcast}
-                    disabled={sendingBroadcast || !broadcastText.trim() || selectedStudentIds.size === 0}
-                  >
-                    {sendingBroadcast ? (
-                      <span className="button-loading">
-                        <span className="spinner" />
-                        Sending...
-                      </span>
-                    ) : (
-                      "Send 📢"
-                    )}
-                  </button>
-
-                  {broadcastGrammarNote && (
-                    <div className="grammar-corrected-note">
-                      Grammar corrected before sending. Original: &ldquo;{broadcastGrammarNote.original}&rdquo;
-                    </div>
-                  )}
-                </div>
-
-                {/* Sent broadcasts list */}
-                {sentBroadcasts.length > 0 && (
-                  <div className="sent-broadcasts">
-                    <h3 className="sent-broadcasts-title">Sent Messages ({sentBroadcasts.length})</h3>
-                    {sentBroadcasts.map((b) => (
-                      <div key={b.id} className="sent-broadcast-card">
-                        <div className="sent-broadcast-content">
-                          <p className="sent-broadcast-message">{b.message}</p>
-                          <div className="sent-broadcast-meta">
-                            <span className="sent-broadcast-time">{formatTime(b.createdAt)}</span>
-                            <span className="sent-broadcast-targets">
-                              → {(b.targetStudentIds || []).join(", ")}
-                            </span>
-                          </div>
-                        </div>
-                        <button
-                          className="sent-broadcast-delete"
-                          onClick={() => handleDeleteBroadcast(b.id)}
-                          title="Delete broadcast"
-                        >
-                          🗑
-                        </button>
+                  {s.name || s.id}
+                </label>
+              ))}
+            </div>
+            <button className="broadcast-select-all" onClick={handleToggleAll}>
+              {selectedStudentIds.size === students.length ? "Deselect All" : "Select All"}
+            </button>
+            <textarea
+              placeholder="Type a message to broadcast..."
+              value={broadcastText}
+              onChange={(e) => setBroadcastText(e.target.value)}
+              rows={2}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              className="td-broadcast-textarea"
+            />
+            <button
+              className="broadcast-send-btn"
+              onClick={handleSendBroadcast}
+              disabled={sendingBroadcast || !broadcastText.trim() || selectedStudentIds.size === 0}
+            >
+              {sendingBroadcast ? (
+                <span className="button-loading">
+                  <span className="spinner" />
+                  Sending...
+                </span>
+              ) : (
+                "Send"
+              )}
+            </button>
+            {broadcastGrammarNote && (
+              <div className="grammar-corrected-note">
+                Grammar corrected before sending. Original: &ldquo;{broadcastGrammarNote.original}&rdquo;
+              </div>
+            )}
+            {sentBroadcasts.length > 0 && (
+              <div className="td-sent-list">
+                <h4>Sent ({sentBroadcasts.length})</h4>
+                {sentBroadcasts.map((b) => (
+                  <div key={b.id} className="sent-broadcast-card">
+                    <div className="sent-broadcast-content">
+                      <p className="sent-broadcast-message">{b.message}</p>
+                      <div className="sent-broadcast-meta">
+                        <span className="sent-broadcast-time">{formatTime(b.createdAt)}</span>
+                        <span className="sent-broadcast-targets">
+                          → {(b.targetStudentIds || []).join(", ")}
+                        </span>
                       </div>
-                    ))}
+                    </div>
+                    <button
+                      className="sent-broadcast-delete"
+                      onClick={() => handleDeleteBroadcast(b.id)}
+                      title="Delete broadcast"
+                    >
+                      🗑
+                    </button>
                   </div>
-                )}
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-                {/* Submissions list */}
-                <div className="submissions-list">
-                  <h2 className="submissions-title">
-                    Submissions ({submissions.length})
-                  </h2>
+        {/* Student status bar (compact dots) */}
+        {session && students.length > 0 && (
+          <div className="td-student-bar">
+            <button
+              className={`td-student-pill td-pill-all ${!filterStudent ? "td-pill-active" : ""}`}
+              onClick={() => setFilterStudent(null)}
+            >
+              All
+            </button>
+            {students.map((s) => {
+              const hasSubmitted = submittedStudentIds.has(s.id);
+              const hasDraft = !!draftsByStudent[s.id];
+              let statusClass = "td-pill-inactive";
+              if (hasSubmitted) statusClass = "td-pill-submitted";
+              else if (hasDraft) statusClass = "td-pill-drafting";
 
-                  {submissions.length === 0 && (
-                    <p className="no-submissions-text">
-                      No submissions yet. Waiting for students...
-                    </p>
-                  )}
+              return (
+                <button
+                  key={s.id}
+                  className={`td-student-pill ${statusClass} ${filterStudent === s.id ? "td-pill-active" : ""}`}
+                  onClick={() => setFilterStudent(filterStudent === s.id ? null : s.id)}
+                  title={`${s.id} — ${hasSubmitted ? "Submitted" : hasDraft ? "Drafting" : "Inactive"}`}
+                >
+                  {s.id}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-                  {submissions.map((sub) => {
-                    const isExpanded = expandedId === sub.id;
-                    const hasIterations = sub.iterations && sub.iterations.length > 0;
-                    const iterationCount = hasIterations ? sub.iterations.length : 1;
-                    const preview = hasIterations
-                      ? (sub.iterations[0].text?.length > 80
-                        ? sub.iterations[0].text.slice(0, 80) + "..."
-                        : sub.iterations[0].text)
-                      : (sub.text?.length > 80
-                        ? sub.text.slice(0, 80) + "..."
-                        : sub.text);
+        {/* Unified Activity Feed */}
+        {session && (
+          <div className="td-feed">
+            {filterStudent && (
+              <div className="td-filter-banner">
+                Showing: <strong>{filterStudent}</strong>
+                <button className="td-clear-filter" onClick={() => setFilterStudent(null)}>
+                  Clear filter
+                </button>
+              </div>
+            )}
 
-                    const currentVersion = selectedVersions[sub.id] || 0;
-                    const actualYear = getActualYear(sub.studentId);
-                    const grade = grades[sub.id];
-                    const isGrading = gradingId === sub.id;
+            {activityFeed.length === 0 && (
+              <div className="td-empty-feed">
+                {filterStudent
+                  ? `No activity from ${filterStudent} yet.`
+                  : "No activity yet. Waiting for students..."}
+              </div>
+            )}
 
-                    // Get raw text for the latest version
-                    const latestText = hasIterations
-                      ? sub.iterations[sub.iterations.length - 1]?.text || ""
-                      : sub.text || "";
-                    const currentText = hasIterations
-                      ? sub.iterations[currentVersion]?.text || ""
-                      : sub.text || "";
-                    const isRawVisible = showRawText[sub.id] || false;
+            {activityFeed.map((item) => {
+              const isExpanded = expandedId === item.id;
 
-                    return (
-                      <div key={sub.id} className="submission-card">
-                        <div
-                          className="submission-header"
-                          onClick={() => {
-                            setExpandedId(isExpanded ? null : sub.id);
-                            // Auto-fetch grade when expanding
-                            if (!isExpanded && !grades[sub.id]) {
-                              handleFetchGrade(sub);
-                            }
-                          }}
-                        >
-                          <span className="submission-student">
-                            {sub.studentId}
-                          </span>
-                          {/* Actual year badge */}
-                          {actualYear && (
-                            <span className="year-badge">{actualYear}</span>
-                          )}
-                          {/* AI grade badge (compact, in header — show first and last version) */}
+              return (
+                <div
+                  key={item.id}
+                  className={`td-feed-card ${isExpanded ? "td-feed-card-expanded" : ""}`}
+                >
+                  {/* Card header */}
+                  <div
+                    className="td-feed-header"
+                    onClick={() => {
+                      setExpandedId(isExpanded ? null : item.id);
+                      // Auto-fetch grade for submissions when expanding
+                      if (!isExpanded && item.type === "submission" && !grades[item.rawId]) {
+                        const sub = item.submission;
+                        if (sub.type !== "sentenceBuilding") {
+                          handleFetchGrade(sub);
+                        }
+                      }
+                    }}
+                  >
+                    <span className="td-feed-student">{item.studentId}</span>
+                    <span className={`td-feed-mode ${modeBadgeClass(item.mode)}`}>
+                      {modeLabel(item.mode)}
+                    </span>
+                    <span className={`td-feed-status ${item.status === "submitted" ? "td-status-submitted" : "td-status-drafting"}`}>
+                      {item.status === "submitted" ? "Submitted" : "Drafting"}
+                    </span>
+                    {item.type === "submission" && item.iterationCount > 1 && (
+                      <span className="td-feed-versions">v{item.iterationCount}</span>
+                    )}
+                    {/* Grade badges in header */}
+                    {item.type === "submission" && (() => {
+                      const grade = grades[item.rawId];
+                      const actualYear = getActualYear(item.studentId);
+                      return (
+                        <>
+                          {actualYear && <span className="year-badge">{actualYear}</span>}
                           {grade?.versions && grade.versions.length > 0 && (
                             <>
-                              <span className="grade-badge">
-                                {grade.versions[0].level}
-                              </span>
+                              <span className="grade-badge">{grade.versions[0].level}</span>
                               {grade.versions.length > 1 && (
                                 <>
                                   <span className="grade-arrow-header">→</span>
@@ -727,467 +892,408 @@ export default function TeacherDashboardPage() {
                               )}
                             </>
                           )}
-                          <span className="submission-preview">{preview}</span>
-                          {iterationCount > 1 && (
-                            <span className="iteration-badge">{iterationCount}</span>
-                          )}
-                          <span className="submission-time">
-                            {formatTime(sub.createdAt)}
-                          </span>
-                          <span className="submission-toggle">
-                            {isExpanded ? "▾" : "▸"}
-                          </span>
-                        </div>
+                        </>
+                      );
+                    })()}
+                    <span className="td-feed-time">{formatTimeAgo(item.time)}</span>
+                    <span className="td-feed-toggle">{isExpanded ? "▾" : "▸"}</span>
+                  </div>
 
-                        {isExpanded && (
-                          <div className="submission-detail">
-                            {/* AI Grading section */}
-                            <div className="grading-section">
-                              {isGrading ? (
-                                <div className="grading-loading">
-                                  <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                                  <span>Grading all versions...</span>
-                                </div>
-                              ) : grade?.versions ? (
-                                <div className="grading-result">
-                                  <div className="grading-badges">
-                                    <span className="grading-actual-year">Actual: {actualYear || "?"}</span>
-                                    {grade.versions.map((vg, i) => (
-                                      <span key={vg.version}>
-                                        {i > 0 && <span className="grading-arrow">→</span>}
-                                        <span className={`grading-ai-level ${i === grade.versions.length - 1 ? "grading-ai-latest" : ""}`}>
-                                          v{vg.version}: {vg.level}
-                                        </span>
-                                      </span>
-                                    ))}
-                                    {actualYear && grade.versions.length > 0 && (
-                                      <span className={`grading-gap ${
-                                        (() => {
-                                          const lastGrade = grade.versions[grade.versions.length - 1];
-                                          const levelNum = parseInt(lastGrade.level.replace(/[^0-9]/g, "")) || 0;
-                                          const actualNum = parseInt(actualYear.replace(/[^0-9]/g, "")) || 0;
-                                          return levelNum > actualNum ? "grading-above" : levelNum < actualNum ? "grading-below" : "";
-                                        })()
-                                      }`}>
-                                        {(() => {
-                                          const lastGrade = grade.versions[grade.versions.length - 1];
-                                          const levelNum = parseInt(lastGrade.level.replace(/[^0-9]/g, "")) || 0;
-                                          const actualNum = parseInt(actualYear.replace(/[^0-9]/g, "")) || 0;
-                                          if (levelNum > actualNum) return `+${levelNum - actualNum} above`;
-                                          if (levelNum < actualNum) return `${actualNum - levelNum} below`;
-                                          return "At level";
-                                        })()}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="grading-reason">{grade.versions[grade.versions.length - 1]?.reason || ""}</p>
-                                </div>
-                              ) : (
-                                <button
-                                  className="grade-fetch-btn"
-                                  onClick={() => handleFetchGrade(sub)}
-                                >
-                                  Get AI Grade
-                                </button>
-                              )}
+                  {/* Preview text (when collapsed) */}
+                  {!isExpanded && item.previewText && (
+                    <div className="td-feed-preview">
+                      {item.previewText.slice(0, 100)}{item.previewText.length > 100 ? "..." : ""}
+                    </div>
+                  )}
+
+                  {/* Expanded content */}
+                  {isExpanded && item.type === "draft" && (
+                    <div className="td-feed-detail">
+                      {item.draft.mode === "livecoach" ? (() => {
+                        const coachChecks = item.draft.coachChecks || [];
+                        // checks 存為倒序（最新在前），反轉為正序 check1, check2...
+                        const checksAsc = [...coachChecks].reverse();
+                        const currentText = item.draft.coachText || item.draft.text || "";
+                        const selectedIdx = selectedVersions[`coach-${item.id}`] ?? checksAsc.length - 1;
+                        const selectedCheck = checksAsc[selectedIdx];
+                        const hasSnapshots = checksAsc.some((c) => c.textSnapshot);
+
+                        // Grade keys
+                        const sessionGradeKey = `coach-${item.id}-session`;
+                        const sessionGrade = coachGrades[sessionGradeKey];
+                        const isGradingSession = coachGradingKey === sessionGradeKey;
+
+                        // 渲染帶 diff 高亮的文字（綠色標記新增/修改的字詞）
+                        const renderDiffText = (newText, oldText) => {
+                          if (!oldText) return newText;
+                          const changed = getChangedWordIndices(oldText, newText);
+                          if (!changed || changed.size === 0) return newText;
+                          const parts = newText.split(/(\s+)/);
+                          let wordIdx = 0;
+                          return parts.map((part, i) => {
+                            if (/^\s+$/.test(part)) return part;
+                            const isChanged = changed.has(wordIdx);
+                            wordIdx++;
+                            return isChanged
+                              ? <mark key={i} className="td-coach-diff-add">{part}</mark>
+                              : part;
+                          });
+                        };
+
+                        return (
+                          <>
+                            {/* 當前文字 + Grade 按鈕 */}
+                            <div className="td-detail-section td-coach-session-header">
+                              <div className="td-coach-session-title-row">
+                                <strong>Current text:</strong>
+                                {sessionGrade
+                                  ? <span className="td-coach-grade-badge">{sessionGrade.level}</span>
+                                  : (
+                                    <button
+                                      className="td-coach-grade-btn"
+                                      onClick={() => handleCoachGrade(item.id, "session", currentText, item.studentId)}
+                                      disabled={isGradingSession || !currentText.trim()}
+                                    >
+                                      {isGradingSession ? "Grading..." : "Grade this session"}
+                                    </button>
+                                  )}
+                              </div>
+                              <p className="td-detail-text">{currentText || "(empty)"}</p>
+                              {sessionGrade && <div className="td-coach-grade-reason">{sessionGrade.reason}</div>}
                             </div>
 
-                            {hasIterations ? (
-                              <>
-                                {/* Version tabs */}
-                                {sub.iterations.length > 1 && (
-                                  <div className="version-tabs" style={{ marginTop: 16 }}>
-                                    {sub.iterations.map((iter, idx) => (
-                                      <button
-                                        key={idx}
-                                        className={`version-tab ${currentVersion === idx ? "active" : ""}`}
-                                        onClick={() => setSelectedVersions((prev) => ({ ...prev, [sub.id]: idx }))}
-                                      >
-                                        v{iter.version}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* Raw text toggle + copy */}
-                                <div className="raw-text-controls">
-                                  <button
-                                    className={`raw-text-toggle ${isRawVisible ? "active" : ""}`}
-                                    onClick={() => setShowRawText((prev) => ({ ...prev, [sub.id]: !prev[sub.id] }))}
-                                  >
-                                    {isRawVisible ? "Hide" : "Show"} Clean Text
-                                  </button>
-                                  <button
-                                    className="copy-text-btn"
-                                    onClick={() => handleCopyRawText(currentText, sub.id)}
-                                  >
-                                    {copiedId === sub.id ? "Copied!" : "Copy Text"}
-                                  </button>
+                            {checksAsc.length > 0 && (
+                              <div className="td-detail-section">
+                                <strong>Coach checks ({checksAsc.length}):</strong>
+                                <div className="td-coach-version-tabs">
+                                  {checksAsc.map((c, i) => (
+                                    <button
+                                      key={i}
+                                      className={`td-coach-version-tab ${i === selectedIdx ? "active" : ""}`}
+                                      onClick={() => setSelectedVersions((prev) => ({ ...prev, [`coach-${item.id}`]: i }))}
+                                    >
+                                      Check {i + 1}
+                                      {c.focus !== "basics" && c.feedback?.fix_type ? ` · ${c.feedback.fix_type}` : ""}
+                                    </button>
+                                  ))}
                                 </div>
 
-                                {/* Raw text (clean, no annotations) */}
-                                {isRawVisible && (
-                                  <div className="raw-text-display">
-                                    <p>{currentText}</p>
-                                  </div>
-                                )}
+                                {selectedCheck && (() => {
+                                  const checkGradeKey = `coach-${item.id}-${selectedIdx}`;
+                                  const checkGrade = coachGrades[checkGradeKey];
+                                  const isGradingCheck = coachGradingKey === checkGradeKey;
+                                  const snapshot = selectedCheck.textSnapshot;
+                                  const prevSnapshot = selectedIdx > 0 ? checksAsc[selectedIdx - 1]?.textSnapshot : null;
 
-                                {/* Annotated text for selected version */}
-                                <div className="submission-full-text">
-                                  <h3>Writing {sub.iterations.length > 1 ? `(v${sub.iterations[currentVersion]?.version || 1})` : ""} — AI Feedback</h3>
-                                  <AnnotatedText
-                                    text={sub.iterations[currentVersion]?.text || ""}
-                                    annotations={sub.iterations[currentVersion]?.annotations || []}
-                                    changedWords={null}
-                                  />
-                                </div>
-                              </>
-                            ) : (
-                              /* Old format fallback — plain text */
-                              <>
-                                <div className="raw-text-controls">
-                                  <button
-                                    className="copy-text-btn"
-                                    onClick={() => handleCopyRawText(sub.text || "", sub.id)}
-                                  >
-                                    {copiedId === sub.id ? "Copied!" : "Copy Text"}
-                                  </button>
-                                </div>
-                                <div className="submission-full-text">
-                                  <h3>Writing</h3>
-                                  <p>{sub.text}</p>
-                                </div>
-                              </>
-                            )}
+                                  return (
+                                    <div className="td-coach-version-detail">
+                                      {/* 有 snapshot 時顯示該版本文字 + diff */}
+                                      {snapshot && (
+                                        <div className="td-coach-snapshot">
+                                          <div className="td-coach-snapshot-label">
+                                            Text at check {selectedIdx + 1}:
+                                            {checkGrade && <span className="td-coach-grade-badge">{checkGrade.level}</span>}
+                                            {!checkGrade && (
+                                              <button
+                                                className="td-coach-grade-btn td-coach-grade-btn-sm"
+                                                onClick={() => handleCoachGrade(item.id, selectedIdx, snapshot, item.studentId)}
+                                                disabled={isGradingCheck}
+                                              >
+                                                {isGradingCheck ? "..." : "Grade"}
+                                              </button>
+                                            )}
+                                          </div>
+                                          <p className="td-detail-text">
+                                            {prevSnapshot
+                                              ? renderDiffText(snapshot, prevSnapshot)
+                                              : snapshot}
+                                          </p>
+                                          {checkGrade && <div className="td-coach-grade-reason">{checkGrade.reason}</div>}
+                                        </div>
+                                      )}
 
-                            {/* Existing teacher comment */}
-                            {sub.teacherComment && (
-                              <div className="teacher-comment">
-                                <h3>Your comment</h3>
-                                <p>{sub.teacherComment}</p>
+                                      {/* 沒有 snapshot（舊資料） */}
+                                      {!snapshot && !hasSnapshots && (
+                                        <div className="td-coach-no-snapshot">
+                                          Text snapshots not available for this session (recorded before this feature).
+                                          Start a new Live Coach session to see text at each checkpoint.
+                                        </div>
+                                      )}
+
+                                      {/* 回饋卡 */}
+                                      <div className="td-coach-check">
+                                        <span className="td-coach-praise">"{selectedCheck.sentence}" — {selectedCheck.feedback?.praise || ""}</span>
+                                        {selectedCheck.feedback?.fix && <span className="td-coach-fix">{selectedCheck.feedback.fix}</span>}
+                                        {selectedCheck.feedback?.hint && <span className="td-coach-fix">💡 {selectedCheck.feedback.hint}</span>}
+                                      </div>
+
+                                      {/* Level Up — 基於該 check 的 grade */}
+                                      {(snapshot || currentText) && (
+                                        <div className="td-coach-levelup">
+                                          <strong>Level up{checkGrade ? ` from ${checkGrade.level}` : ""}:</strong>
+                                          {!checkGrade && <span className="td-coach-no-snapshot"> (Grade first for accurate levelling)</span>}
+                                          <div className="td-coach-levelup-btns">
+                                            {[1, 2, 3, 4, 5].map((lvl) => {
+                                              const luKey = `${item.id}-chk${selectedIdx}-${lvl}`;
+                                              const luResult = levelUpResults[luKey];
+                                              const luLoading = levelUpLoading === luKey;
+                                              return (
+                                                <button
+                                                  key={lvl}
+                                                  className={`td-coach-levelup-btn ${luResult ? "done" : ""}`}
+                                                  onClick={() => handleLevelUp(`${item.id}-chk${selectedIdx}`, snapshot || currentText, item.studentId, lvl, checkGrade?.level)}
+                                                  disabled={luLoading || !!luResult}
+                                                >
+                                                  {luLoading ? "..." : luResult ? `✓ +${lvl}` : `+${lvl}`}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                          {[1, 2, 3, 4, 5].map((lvl) => {
+                                            const luResult = levelUpResults[`${item.id}-chk${selectedIdx}-${lvl}`];
+                                            if (!luResult) return null;
+                                            return (
+                                              <div key={lvl} className="td-coach-levelup-result">
+                                                <div className="td-coach-levelup-result-header">
+                                                  <span className="td-coach-grade-badge">{luResult.targetYear}</span>
+                                                  <span className="td-coach-levelup-label">+{lvl} level{lvl > 1 ? "s" : ""} up</span>
+                                                </div>
+                                                <p className="td-detail-text">{luResult.rewrite}</p>
+                                                <div className="td-coach-levelup-changes">{luResult.changes}</div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* 等級進程 */}
+                                {(() => {
+                                  const gradedVersions = checksAsc
+                                    .map((c, i) => ({ idx: i, grade: coachGrades[`coach-${item.id}-${i}`] }))
+                                    .filter((v) => v.grade);
+                                  if (gradedVersions.length < 2) return null;
+                                  return (
+                                    <div className="td-coach-grade-progression">
+                                      <strong>Level progression: </strong>
+                                      {gradedVersions.map((v, vi) => {
+                                        const prev = vi > 0 ? gradedVersions[vi - 1].grade.level : null;
+                                        const improved = prev && v.grade.level > prev;
+                                        return (
+                                          <span key={v.idx}>
+                                            {vi > 0 && " → "}
+                                            <span className={improved ? "grade-improved" : ""}>
+                                              Check {v.idx + 1}: {v.grade.level}
+                                            </span>
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                })()}
+
                               </div>
                             )}
+                          </>
+                        );
+                      })() : (
+                        <div className="td-detail-section">
+                          <p className="td-detail-text">{item.previewText || "(empty)"}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                            {/* Teacher comment input */}
-                            <div className="teacher-comment-input">
-                              <label className="input-label">
-                                {sub.teacherComment
-                                  ? "Update your comment"
-                                  : "Add a comment"}
-                              </label>
-                              <textarea
-                                className="writing-input"
-                                placeholder="Write a comment for this student..."
-                                value={commentDrafts[sub.id] || ""}
-                                onChange={(e) =>
-                                  setCommentDrafts((prev) => ({
-                                    ...prev,
-                                    [sub.id]: e.target.value,
-                                  }))
-                                }
-                                rows={2}
-                                spellCheck={false}
-                                autoCorrect="off"
-                                autoCapitalize="off"
-                              />
-                              <button
-                                className="save-comment-btn"
-                                onClick={() => handleSaveComment(sub.id)}
-                                disabled={
-                                  savingComment === sub.id ||
-                                  !commentDrafts[sub.id]?.trim()
-                                }
-                              >
-                                {savingComment === sub.id ? (
-                                  <span className="button-loading">
-                                    <span className="spinner" />
-                                    Checking grammar...
-                                  </span>
-                                ) : (
-                                  "Save Comment"
-                                )}
-                              </button>
+                  {isExpanded && item.type === "submission" && (() => {
+                    const sub = item.submission;
+                    const isSB = sub.type === "sentenceBuilding";
+                    const hasIterations = sub.iterations && sub.iterations.length > 0;
+                    const currentVersion = selectedVersions[sub.id] || 0;
+                    const actualYear = getActualYear(sub.studentId);
+                    const grade = grades[sub.id];
+                    const isGrading = gradingId === sub.id;
+                    const currentText = hasIterations
+                      ? sub.iterations[currentVersion]?.text || ""
+                      : sub.text || "";
+                    const isRawVisible = showRawText[sub.id] || false;
 
-                              {grammarNote?.submissionId === sub.id && (
-                                <div className="grammar-corrected-note">
-                                  Grammar corrected before saving. Original: &ldquo;{grammarNote.original}&rdquo;
+                    return (
+                      <div className="td-feed-detail">
+                        {/* AI Grading section */}
+                        {!isSB && (
+                          <div className="grading-section">
+                            {isGrading ? (
+                              <div className="grading-loading">
+                                <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                                <span>Grading...</span>
+                              </div>
+                            ) : grade?.versions ? (
+                              <div className="grading-result">
+                                <div className="grading-badges">
+                                  <span className="grading-actual-year">Actual: {actualYear || "?"}</span>
+                                  {grade.versions.map((vg, i) => (
+                                    <span key={vg.version}>
+                                      {i > 0 && <span className="grading-arrow">→</span>}
+                                      <span className={`grading-ai-level ${i === grade.versions.length - 1 ? "grading-ai-latest" : ""}`}>
+                                        v{vg.version}: {vg.level}
+                                      </span>
+                                    </span>
+                                  ))}
                                 </div>
-                              )}
-                            </div>
+                                <p className="grading-reason">{grade.versions[grade.versions.length - 1]?.reason || ""}</p>
+                              </div>
+                            ) : (
+                              <button
+                                className="grade-fetch-btn"
+                                onClick={() => handleFetchGrade(sub)}
+                              >
+                                Get AI Grade
+                              </button>
+                            )}
                           </div>
                         )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
 
-            {dashboardTab === "feedback" && (
-              <div className="feedback-stats">
-                <h2 className="submissions-title">
-                  Student Feedback ({feedbackDocs.length} responses)
-                </h2>
-
-                {feedbackDocs.length === 0 ? (
-                  <p className="no-submissions-text">No feedback yet for this session.</p>
-                ) : (
-                  <>
-                    {/* Mood distribution */}
-                    <div className="feedback-stats-card">
-                      <h3>How did students feel?</h3>
-                      <div className="emoji-bar">
-                        {[
-                          { value: 1, emoji: "😫" },
-                          { value: 2, emoji: "😕" },
-                          { value: 3, emoji: "😐" },
-                          { value: 4, emoji: "🙂" },
-                          { value: 5, emoji: "🤩" },
-                        ].map((m) => {
-                          const count = feedbackDocs.filter((f) => f.mood === m.value).length;
-                          return (
-                            <div key={m.value} className="emoji-bar-item">
-                              <span className="emoji-bar-emoji">{m.emoji}</span>
-                              <div className="emoji-bar-track">
-                                <div
-                                  className="emoji-bar-fill"
-                                  style={{
-                                    width: feedbackDocs.length > 0
-                                      ? `${(count / feedbackDocs.length) * 100}%`
-                                      : "0%",
-                                  }}
-                                />
+                        {/* Sentence Building display */}
+                        {isSB ? (
+                          <>
+                            <div className="td-detail-text" style={{ whiteSpace: "pre-wrap" }}>{sub.paragraph}</div>
+                            {sub.sentences && sub.sentences.length > 0 && (
+                              <div style={{ marginTop: 12 }}>
+                                {sub.sentences.map((s, i) => (
+                                  <div key={i} style={{ marginBottom: 8, fontSize: 14 }}>
+                                    {s.original !== s.final && (
+                                      <span style={{ color: "#94a3b8", textDecoration: "line-through", marginRight: 8 }}>{s.original}</span>
+                                    )}
+                                    <span>{s.final}</span>
+                                  </div>
+                                ))}
                               </div>
-                              <span className="emoji-bar-count">{count}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                            )}
+                          </>
+                        ) : hasIterations ? (
+                          <>
+                            {/* Version tabs */}
+                            {sub.iterations.length > 1 && (
+                              <div className="version-tabs">
+                                {sub.iterations.map((iter, idx) => (
+                                  <button
+                                    key={idx}
+                                    className={`version-tab ${currentVersion === idx ? "active" : ""}`}
+                                    onClick={() => setSelectedVersions((prev) => ({ ...prev, [sub.id]: idx }))}
+                                  >
+                                    v{iter.version}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
 
-                    {/* What helped most */}
-                    <div className="feedback-stats-card">
-                      <h3>What helped you most?</h3>
-                      {["AI feedback", "Seeing my old writing", "Speech input"].map((opt) => {
-                        const count = feedbackDocs.filter((f) => (f.helpedMost || []).includes(opt)).length;
-                        return (
-                          <div key={opt} className="option-count-row">
-                            <span className="option-count-label">{opt}</span>
-                            <div className="option-count-bar-track">
-                              <div
-                                className="option-count-bar-fill"
-                                style={{
-                                  width: feedbackDocs.length > 0
-                                    ? `${(count / feedbackDocs.length) * 100}%`
-                                    : "0%",
-                                }}
+                            {/* Raw text toggle + copy */}
+                            <div className="raw-text-controls">
+                              <button
+                                className={`raw-text-toggle ${isRawVisible ? "active" : ""}`}
+                                onClick={() => setShowRawText((prev) => ({ ...prev, [sub.id]: !prev[sub.id] }))}
+                              >
+                                {isRawVisible ? "Hide" : "Show"} Clean Text
+                              </button>
+                              <button
+                                className="copy-text-btn"
+                                onClick={() => handleCopyRawText(currentText, sub.id)}
+                              >
+                                {copiedId === sub.id ? "Copied!" : "Copy Text"}
+                              </button>
+                            </div>
+
+                            {isRawVisible && (
+                              <div className="raw-text-display">
+                                <p>{currentText}</p>
+                              </div>
+                            )}
+
+                            {/* Annotated text */}
+                            <div className="submission-full-text">
+                              <AnnotatedText
+                                text={sub.iterations[currentVersion]?.text || ""}
+                                annotations={sub.iterations[currentVersion]?.annotations || []}
+                                changedWords={null}
                               />
                             </div>
-                            <span className="option-count-num">{count}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* What was difficult */}
-                    <div className="feedback-stats-card">
-                      <h3>What was difficult?</h3>
-                      {[
-                        "Understanding the feedback",
-                        "Knowing how to improve",
-                        "The app was confusing",
-                        "Nothing, it was easy",
-                      ].map((opt) => {
-                        const count = feedbackDocs.filter((f) => (f.difficult || []).includes(opt)).length;
-                        return (
-                          <div key={opt} className="option-count-row">
-                            <span className="option-count-label">{opt}</span>
-                            <div className="option-count-bar-track">
-                              <div
-                                className="option-count-bar-fill"
-                                style={{
-                                  width: feedbackDocs.length > 0
-                                    ? `${(count / feedbackDocs.length) * 100}%`
-                                    : "0%",
-                                }}
-                              />
+                          </>
+                        ) : (
+                          <>
+                            <div className="raw-text-controls">
+                              <button
+                                className="copy-text-btn"
+                                onClick={() => handleCopyRawText(sub.text || "", sub.id)}
+                              >
+                                {copiedId === sub.id ? "Copied!" : "Copy Text"}
+                              </button>
                             </div>
-                            <span className="option-count-num">{count}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            <div className="submission-full-text">
+                              <p>{sub.text}</p>
+                            </div>
+                          </>
+                        )}
 
-                    {/* Text comments */}
-                    {feedbackDocs.some((f) => f.comment?.trim()) && (
-                      <div className="feedback-stats-card">
-                        <h3>Comments</h3>
-                        <div className="feedback-comments-list">
-                          {feedbackDocs
-                            .filter((f) => f.comment?.trim())
-                            .map((f) => (
-                              <div key={f.id} className="feedback-comment-item">
-                                <span className="feedback-comment-student">{f.studentId}</span>
-                                <p className="feedback-comment-text">{f.comment}</p>
-                              </div>
-                            ))}
+                        {/* Existing teacher comment */}
+                        {sub.teacherComment && (
+                          <div className="teacher-comment">
+                            <h3>Your comment</h3>
+                            <p>{sub.teacherComment}</p>
+                          </div>
+                        )}
+
+                        {/* Teacher comment input */}
+                        <div className="teacher-comment-input">
+                          <label className="input-label" style={{ fontSize: 15 }}>
+                            {sub.teacherComment ? "Update your comment" : "Add a comment"}
+                          </label>
+                          <textarea
+                            className="writing-input"
+                            placeholder="Write a comment for this student..."
+                            value={commentDrafts[sub.id] || ""}
+                            onChange={(e) =>
+                              setCommentDrafts((prev) => ({
+                                ...prev,
+                                [sub.id]: e.target.value,
+                              }))
+                            }
+                            rows={2}
+                            spellCheck={false}
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                          />
+                          <button
+                            className="save-comment-btn"
+                            onClick={() => handleSaveComment(sub.id)}
+                            disabled={
+                              savingComment === sub.id ||
+                              !commentDrafts[sub.id]?.trim()
+                            }
+                          >
+                            {savingComment === sub.id ? (
+                              <span className="button-loading">
+                                <span className="spinner" />
+                                Checking grammar...
+                              </span>
+                            ) : (
+                              "Save Comment"
+                            )}
+                          </button>
+                          {grammarNote?.submissionId === sub.id && (
+                            <div className="grammar-corrected-note">
+                              Grammar corrected before saving. Original: &ldquo;{grammarNote.original}&rdquo;
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {dashboardTab === "overview" && (
-              <div className="class-overview">
-                <h2 className="submissions-title">Class Overview</h2>
-
-                {profilesLoading ? (
-                  <p className="no-submissions-text">Loading profiles...</p>
-                ) : studentProfiles.length === 0 ? (
-                  <p className="no-submissions-text">No student profiles yet. Profiles are created after students submit their first writing.</p>
-                ) : (
-                  <>
-                    {/* VCOP Level Averages */}
-                    <div className="feedback-stats-card">
-                      <h3>Class VCOP Level Averages</h3>
-                      <div className="vcop-averages">
-                        {[
-                          { key: "vocabulary", label: "Vocabulary", color: "#8B5CF6", emoji: "📚" },
-                          { key: "connectives", label: "Connectives", color: "#3B82F6", emoji: "🔗" },
-                          { key: "openers", label: "Openers", color: "#10B981", emoji: "✨" },
-                          { key: "punctuation", label: "Punctuation", color: "#F59E0B", emoji: "🎯" },
-                        ].map(({ key, label, color, emoji }) => {
-                          const levels = studentProfiles
-                            .map((p) => p.vcop?.[key]?.level)
-                            .filter((l) => typeof l === "number");
-                          const avg = levels.length > 0
-                            ? (levels.reduce((a, b) => a + b, 0) / levels.length).toFixed(1)
-                            : "—";
-                          const pct = levels.length > 0
-                            ? Math.round((levels.reduce((a, b) => a + b, 0) / levels.length / 5) * 100)
-                            : 0;
-                          return (
-                            <div key={key} className="vcop-avg-row">
-                              <span className="vcop-avg-label">{emoji} {label}</span>
-                              <div className="vcop-avg-bar-track">
-                                <div
-                                  className="vcop-avg-bar-fill"
-                                  style={{ width: `${pct}%`, backgroundColor: color }}
-                                />
-                              </div>
-                              <span className="vcop-avg-value" style={{ color }}>{avg}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Common Weaknesses */}
-                    <div className="feedback-stats-card">
-                      <h3>Common Weaknesses</h3>
-                      {(() => {
-                        const weaknessCounts = {};
-                        for (const p of studentProfiles) {
-                          const weaknesses = p.vcop?.vocabulary?.weaknesses || [];
-                          for (const w of weaknesses) {
-                            weaknessCounts[w] = (weaknessCounts[w] || 0) + 1;
-                          }
-                          // Check openers never used
-                          const neverUsed = p.vcop?.openers?.ispacedNeverUsed || [];
-                          for (const opener of neverUsed) {
-                            const key = `Never used ${opener} opener`;
-                            weaknessCounts[key] = (weaknessCounts[key] || 0) + 1;
-                          }
-                          // Check punctuation not yet
-                          const notYet = p.vcop?.punctuation?.notYet || [];
-                          for (const item of notYet) {
-                            const key = `Punctuation: ${item} not yet`;
-                            weaknessCounts[key] = (weaknessCounts[key] || 0) + 1;
-                          }
-                        }
-                        const sorted = Object.entries(weaknessCounts)
-                          .sort((a, b) => b[1] - a[1])
-                          .slice(0, 5);
-
-                        if (sorted.length === 0) {
-                          return <p className="no-submissions-text">No weakness patterns detected yet.</p>;
-                        }
-
-                        return (
-                          <div className="weakness-list">
-                            {sorted.map(([weakness, count]) => (
-                              <div key={weakness} className="weakness-item">
-                                <span className="weakness-count">{count}/{studentProfiles.length}</span>
-                                <span className="weakness-text">{weakness}</span>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Student VCOP Heatmap */}
-                    <div className="feedback-stats-card">
-                      <h3>Student VCOP Heatmap</h3>
-                      <div className="heatmap-wrapper">
-                        <table className="heatmap-table">
-                          <thead>
-                            <tr>
-                              <th>Student</th>
-                              <th style={{ color: "#8B5CF6" }}>V</th>
-                              <th style={{ color: "#3B82F6" }}>C</th>
-                              <th style={{ color: "#10B981" }}>O</th>
-                              <th style={{ color: "#F59E0B" }}>P</th>
-                              <th>Submissions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {studentProfiles
-                              .sort((a, b) => a.id.localeCompare(b.id))
-                              .map((p) => {
-                                const levelColor = (level) => {
-                                  if (level <= 1) return { bg: "#fef2f2", color: "#dc2626" };
-                                  if (level <= 2) return { bg: "#fff7ed", color: "#ea580c" };
-                                  if (level <= 3) return { bg: "#fefce8", color: "#ca8a04" };
-                                  if (level <= 4) return { bg: "#f0fdf4", color: "#16a34a" };
-                                  return { bg: "#ecfdf5", color: "#047857" };
-                                };
-                                const vLevel = p.vcop?.vocabulary?.level || 0;
-                                const cLevel = p.vcop?.connectives?.level || 0;
-                                const oUsed = p.vcop?.openers?.ispacedUsed?.length || 0;
-                                const oLevel = oUsed >= 5 ? 4 : oUsed >= 3 ? 3 : oUsed >= 1 ? 2 : 1;
-                                const pLevel = p.vcop?.punctuation?.level || 0;
-
-                                return (
-                                  <tr key={p.id}>
-                                    <td className="heatmap-student">{p.id}</td>
-                                    {[vLevel, cLevel, oLevel, pLevel].map((level, i) => {
-                                      const { bg, color } = levelColor(level);
-                                      return (
-                                        <td
-                                          key={i}
-                                          className="heatmap-cell"
-                                          style={{ backgroundColor: bg, color }}
-                                        >
-                                          {level || "—"}
-                                        </td>
-                                      );
-                                    })}
-                                    <td className="heatmap-submissions">{p.totalSubmissions || 0}</td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </>
+                    );
+                  })()}
+                </div>
+              );
+            })}
+          </div>
         )}
       </main>
     </div>

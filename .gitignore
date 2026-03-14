@@ -23,4 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
-.env*.local
+.env*
+
+# Claude Code local settings
+.claude

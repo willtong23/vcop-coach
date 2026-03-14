@@ -18,6 +18,7 @@ Full classroom tool: teacher sets up sessions, students log in to write, AI give
   - Prompt changes: test with a sample student text and verify the AI response matches expected format
   - Never deploy code you haven't tested yourself
 - **CONTEXT MANAGEMENT**: After completing each major feature or task, remind the user to run /compact or start a new session. If you notice your own responses becoming inconsistent or you're forgetting earlier instructions, say "Context is getting heavy — recommend /compact or new session."
+- **LAYOUT RULE**: Student writing page must always use max-width: 800px with width: 100%. Never add extra padding, margin, or container constraints that shrink the content area. Any CSS change must be visually verified to not reduce the writing area width.
 
 ## 技術選擇
 - Vite + React + React Router（多頁路由）

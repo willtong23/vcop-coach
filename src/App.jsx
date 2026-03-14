@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import StudentWritePage from "./pages/StudentWritePage";
+import SentenceGuidedPage from "./pages/SentenceGuidedPage";
 import TeacherSetupPage from "./pages/TeacherSetupPage";
 import TeacherDashboardPage from "./pages/TeacherDashboardPage";
 import "./App.css";
@@ -22,6 +23,14 @@ export default function App() {
         element={
           <ProtectedRoute allowedRole="student">
             <StudentWritePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/guided"
+        element={
+          <ProtectedRoute allowedRole="student">
+            <SentenceGuidedPage />
           </ProtectedRoute>
         }
       />

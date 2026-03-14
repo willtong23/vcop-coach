@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 const VCOP_EMOJIS = { V: "📚", C: "🔗", O: "✨", P: "🎯" };
 const VCOP_LABELS = { V: "Vocabulary", C: "Connectives", O: "Openers", P: "Punctuation" };
@@ -26,7 +26,9 @@ function scrollToAndFlash(targetId) {
   setTimeout(() => el.classList.remove("ann-flash"), 1500);
 }
 
-export default function AnnotatedText({ text, annotations, changedWords, isFinalized, hiddenDimensions }) {
+export default function AnnotatedText({ text, annotations, changedWords, isFinalized, hiddenDimensions, isRevising, onHintUsed }) {
+  // 追蹤已顯示 hint 的 annotation index
+  const [revealedHints, setRevealedHints] = useState(new Set());
   if (!annotations || annotations.length === 0) {
     if (changedWords && changedWords.size > 0) {
       return <p className="annotated-text">{renderWithChangedWords(text, changedWords)}</p>;
@@ -366,12 +368,40 @@ export default function AnnotatedText({ text, annotations, changedWords, isFinal
                 }
                 const isSpelling = actualType === "spelling";
                 const suggestion = a.suggestion ? cleanSuggestion(a.suggestion, phraseText) : null;
+                // 在修改模式下隱藏 spelling/grammar 的答案，讓學生自己嘗試修正
+                const hideAnswer = isRevising && (actualType === "spelling" || actualType === "grammar");
                 return (
                   <div key={`e-${i}`} id={`card-${aid}`} className={`feedback-card ${isSpelling ? "feedback-card-spelling" : "feedback-card-grammar"}`}>
                     <span className="feedback-card-icon">{isSpelling ? "🔴" : "🟠"}</span>
                     <span className="feedback-card-phrase">"{phraseText}"</span>
-                    {suggestion && <span className="feedback-card-arrow">→</span>}
-                    {suggestion && <span className="feedback-card-correction">{suggestion}</span>}
+                    {hideAnswer ? (
+                      revealedHints.has(i) ? (
+                        <>
+                          {suggestion && <span className="feedback-card-arrow">→</span>}
+                          {suggestion && <span className="feedback-card-correction">{suggestion}</span>}
+                        </>
+                      ) : (
+                        <>
+                          <span className="feedback-card-retrieval">Can you fix this yourself?</span>
+                          {suggestion && (
+                            <button
+                              className="hint-btn"
+                              onClick={() => {
+                                setRevealedHints(prev => new Set([...prev, i]));
+                                if (onHintUsed) onHintUsed(phraseText, actualType);
+                              }}
+                            >
+                              Show hint
+                            </button>
+                          )}
+                        </>
+                      )
+                    ) : (
+                      <>
+                        {suggestion && <span className="feedback-card-arrow">→</span>}
+                        {suggestion && <span className="feedback-card-correction">{suggestion}</span>}
+                      </>
+                    )}
                     <BackToTextBtn annId={aid} />
                   </div>
                 );

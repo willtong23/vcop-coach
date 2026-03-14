@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { VCOP_GRADING_KNOWLEDGE } from "./vcop-knowledge.js";
+import { VCOP_GRADING_KNOWLEDGE } from "./_vcop-knowledge.js";
+import { MODEL_ID } from "./_config.js";
 
 const client = new Anthropic();
 
@@ -61,7 +62,7 @@ export default async function handler(req, res) {
     const systemPrompt = buildGradingPrompt(actualYear);
 
     const message = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      model: MODEL_ID,
       max_tokens: 256,
       system: systemPrompt,
       messages: [

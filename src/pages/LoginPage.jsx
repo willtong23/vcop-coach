@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { collection, query, where, limit, getDocs } from "firebase/firestore";
+import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
+
+const YEAR_GROUP_MAP = { "19": "Y6", "20": "Y5", "21": "Y4" };
 
 export default function LoginPage() {
   const [role, setRole] = useState(null); // null | "teacher" | "student"
@@ -22,6 +26,28 @@ export default function LoginPage() {
         navigate("/teacher/dashboard");
       } else {
         await loginAsStudent(studentId, password);
+        // Check if the active session for this student's year is guided mode
+        const yearGroup = YEAR_GROUP_MAP[studentId.slice(0, 2)] || null;
+        if (yearGroup) {
+          try {
+            const q = query(
+              collection(db, "sessions"),
+              where("active", "==", true),
+              where("targetYear", "==", yearGroup),
+              limit(1)
+            );
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const sessionData = snap.docs[0].data();
+              if (sessionData.writingMode === "guided") {
+                navigate("/student/guided");
+                return;
+              }
+            }
+          } catch (err) {
+            console.error("Failed to check session mode:", err);
+          }
+        }
         navigate("/student/write");
       }
     } catch (err) {

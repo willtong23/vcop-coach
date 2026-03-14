@@ -66,15 +66,24 @@ function buildHighlights(text, annotations, hiddenDimensions) {
 
   const hidden = hiddenDimensions || new Set();
 
-  // Filter to only error/suggestion types that are visible
+  // Filter to visible annotation types that need highlights
   const relevant = annotations.filter((a) => {
+    if (!a.phrase) return false;
     if (a.type === "spelling") return !hidden.has("spelling");
     if (a.type === "grammar") return !hidden.has("grammar");
+    if (a.type === "american_spelling") return !hidden.has("spelling");
     if (a.type === "suggestion") {
       if (a.dimension) return !hidden.has(`${a.dimension}_suggestion`);
       return true;
     }
-    return false; // praise, american_spelling, revision_good etc. don't need highlights
+    if (a.type === "praise") {
+      if (a.dimension) return !hidden.has(`${a.dimension}_praise`);
+      return true;
+    }
+    // Revision types — always show
+    if (a.type === "revision_good") return true;
+    if (a.type === "revision_attempted") return true;
+    return false;
   });
 
   // Locate each phrase with EXACT (case-sensitive) match.
@@ -111,7 +120,11 @@ function buildHighlights(text, annotations, hiddenDimensions) {
       parts.push(text.slice(pos, ann.idx));
     }
 
-    const cls = (ann.type === "spelling" || ann.type === "grammar")
+    const cls = ann.type === "revision_good" || ann.type === "praise"
+      ? "hl-mark-good"
+      : ann.type === "revision_attempted"
+      ? "hl-mark-attempted"
+      : (ann.type === "spelling" || ann.type === "grammar" || ann.type === "american_spelling")
       ? "hl-mark-error"
       : "hl-mark-suggestion";
 

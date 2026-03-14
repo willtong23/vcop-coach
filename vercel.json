@@ -2,5 +2,11 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/system-health",
+      "schedule": "0 9 * * 1"
+    }
   ]
 }

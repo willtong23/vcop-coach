@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { FieldValue } from "firebase-admin/firestore";
 import { getDb } from "./_firebase.js";
+import { MODEL_ID } from "./_config.js";
 
 const client = new Anthropic();
 
@@ -99,7 +100,7 @@ export default async function handler(req, res) {
     const prompt = buildProfileUpdatePrompt(currentProfile, annotations, sessionTopic);
 
     const message = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      model: MODEL_ID,
       max_tokens: 1024,
       messages: [
         {
